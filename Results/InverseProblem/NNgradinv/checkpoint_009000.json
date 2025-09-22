@@ -1,0 +1,11 @@
+{
+  "iteration": 9000,
+  "loss": 0.01630440168082714,
+  "mare": 0.013609157875180244,
+  "lr": 0.05,
+  "mean_iter_time": 0.004667810440063477,
+  "validation": {
+    "error": "validation failed: operands could not be broadcast together with shapes (12,8) (100,8) "
+  },
+  "timestamp": 1758573749.535381
+}
