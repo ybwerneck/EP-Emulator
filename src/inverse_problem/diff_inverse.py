@@ -70,7 +70,7 @@ def inverse_problem_adam(
     clip_grad_norm=5.0,
     stop_loss=1e-5,
     lr_stop_threshold=1e-7,
-    verbose=True,
+    verbose=False,
     true_model=None  # optional wrapper for validation (predict or run_model_to_array style)
 ):
     """
@@ -108,7 +108,7 @@ def inverse_problem_adam(
     P = torch.randn((batch_size, n_params), requires_grad=True, device=torch_device)
 
     optimizer = torch.optim.AdamW([P], lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=10000, verbose=verbose)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.99, patience=20, verbose=verbose)
 
     def loss_fn(pred, target):
         return torch.mean(torch.abs(pred - target) / (torch.abs(target) + 1e-8))
@@ -172,7 +172,7 @@ def inverse_problem_adam(
             plt.ylabel("Loss")
             plt.legend()
             plt.title("Convergence")
-            conv_path = os.path.join(results_dir, f"convergence_iter{it:06d}.png")
+            conv_path = os.path.join(results_dir, f"convergence_iter.png")
         #    plt.tight_layout()
             plt.savefig(conv_path, dpi=200)
             plt.close()
@@ -215,38 +215,16 @@ def inverse_problem_adam(
             cbar = fig.colorbar(sc, ax=axes.tolist(), shrink=0.95)
             cbar.set_label("Relative Y Error")
             plt.suptitle(f"Parity Plots (iter {it})", fontsize=14)
-            parity_path = os.path.join(results_dir, f"parity_iter{it:06d}.png")
+            parity_path = os.path.join(results_dir, f"parity_iter.png")
           #  plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             plt.savefig(parity_path, dpi=300)
             plt.close(fig)
 
             # Save intermediate data
-            np.save(os.path.join(results_dir, f"P_opt_iter{it:06d}.npy"), P_opt)
-            np.save(os.path.join(results_dir, f"Q_opt_iter{it:06d}.npy"), Q_opt)
+            np.save(os.path.join(results_dir, f"P_opt.npy"), P_opt)
+            np.save(os.path.join(results_dir, f"Q_opt.npy"), Q_opt)
 
-            # Optional validation on true model (if provided)
-            validation = {}
-            if true_model is not None:
-                try:
-                    # true_model may expect (n_params, batch) transposed as earlier run_model_to_array
-                    # try first true_model.predict if available
-                    if hasattr(true_model, "predict"):
-                        true_preds = true_model.predict(P_opt)
-                    else:
-                        # fallback to run_model_to_array for your full simulator interface
-                        true_preds = run_model_to_array(P_opt.T, model=true_model)
-                        # align shape: (batch_size, q) or (batch_size, q+1)
-                        if true_preds.ndim == 2 and true_preds.shape[0] == P_opt.shape[0]:
-                            pass
-                        else:
-                            true_preds = np.atleast_2d(true_preds)
-                    # ensure same columns as Y_true if full model returns extra col
-                    if true_preds.shape[1] > Y_true.shape[1]:
-                        true_preds = true_preds[:, :Y_true.shape[1]]
-                    mse_per_case = np.mean((true_preds - Y_true) ** 2, axis=1)
-                    validation['mse_per_case'] = mse_per_case.tolist()
-                except Exception as e:
-                    validation['error'] = f"validation failed: {e}"
+
 
             # checkpoint metadata
             checkpoint_meta = {
@@ -255,7 +233,6 @@ def inverse_problem_adam(
                 "mare": float(mse_loss_val.item()),
                 "lr": float(lr_now),
                 "mean_iter_time": mean_iter_time,
-                "validation": validation,
                 "timestamp": time.time()
             }
             with open(os.path.join(results_dir, f"checkpoint_{it:06d}.json"), "w") as fh:
@@ -278,25 +255,9 @@ def inverse_problem_adam(
     Q_opt = Q_opt_tensor.detach().cpu().numpy()
 
     # Final validation on true model (if provided)
-    validation_final = {}
-    if true_model is not None:
-        try:
-            if hasattr(true_model, "predict"):
-                true_preds = true_model.predict(P_opt)
-            else:
-                true_preds = run_model_to_array(P_opt.T, model=true_model)
-                if true_preds.shape[1] > Y_true.shape[1]:
-                    true_preds = true_preds[:, :Y_true.shape[1]]
-            rel_err = np.abs(Q_opt - true_preds) / (np.abs(true_preds) + 1e-8)
-            validation_final['mean_rel_error'] = float(np.mean(rel_err))
-            validation_final['per_sample_rel_error_mean'] = np.mean(rel_err, axis=1).tolist()
-        except Exception as e:
-            validation_final['error'] = str(e)
 
-    # Save final results
-    os.makedirs(results_dir, exist_ok=True)
-    np.save(os.path.join(results_dir, "P_opt_final.npy"), P_opt)
-    np.save(os.path.join(results_dir, "Q_opt_final.npy"), Q_opt)
+
+
 
     summary = {
         "total_runtime_sec": float(elapsed),
@@ -307,11 +268,9 @@ def inverse_problem_adam(
         "n_params": n_params,
         "batch_size": batch_size,
         "num_iters_ran": it + 1,
-        "validation_final": validation_final
     }
     with open(os.path.join(results_dir, "results_summary.json"), "w") as fh:
         json.dump(summary, fh, indent=2)
-
     if verbose:
         print("Optimization finished. Summary:", summary)
 
@@ -338,7 +297,7 @@ if __name__ == "__main__":
         X=X,
         Y=Y,
         dist=modelC.getDist(low=0.5, high=1.5),
-        batch_size=100,
+        batch_size=512,
         num_iters=10000,
         lr=5e-2,
         lambda_prior=1e-4,

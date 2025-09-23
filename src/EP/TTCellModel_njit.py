@@ -131,6 +131,7 @@ class TTCellModel:
             APD30 = APDs_dict[0.3]
 
             results.append({
+                "Wf":V,
                 "V_rest": V_rest,
                 "V_peak": V_peak,
                 "dVdt_max": dVdt_max,

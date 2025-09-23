@@ -29,7 +29,7 @@ def run_model_to_array(P,model):
         ti = 1000
         tf = 2000
         dt = 0.01
-        dtS = 1
+        dtS = .1
         # Set size parameters for all models
         model.setSizeParameters(ti, tf, dt, dtS)
         results = model.run(P)
@@ -43,7 +43,7 @@ def run_model_to_array(P,model):
             "dVdt_max",
             "Amplitude",
             "DPA",
-            "APD90",
+            "APD80",
             "APD50",
             "APD30"
         ]        
@@ -84,9 +84,9 @@ if __name__ == "__main__":
     full_model = FullModelWrapper(modelC)
 
     # Prior
-    dist = modelC.getDist(low=0.5, high=1.5)
+    dist = modelC.getDist(low=0.75, high=1.25)
 
     # Run inverse problem with DE
     P_final, hist = inverse_problem_DE(full_model, X, Y, dist,
-                                       batch_size=10,checkpoint_interval=5,  # try smaller batch for full model
-                                       num_iters=2000,results_dir="Fmodel") # fewer iterations for speed
+                                       batch_size=20,pop_size=150,checkpoint_interval=1,  # try smaller batch for full model
+                                       num_iters=2000,results_dir="Results/InverseProblem/Fmodel") # fewer iterations for speed
