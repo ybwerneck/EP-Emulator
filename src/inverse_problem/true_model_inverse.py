@@ -70,6 +70,9 @@ class FullModelWrapper:
             np.ndarray: shape (n_candidates, n_qois)
         """
         return run_model_to_array(P, self.model)
+    
+    def getDist(self):
+        return self.model.getDist()
 
 
 

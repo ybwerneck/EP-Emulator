@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+# ---------------------------------------------
+# Arguments
+# ---------------------------------------------
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 user@host_or_ip [python_args...]"
+    exit 1
+fi
+
+REMOTE="$1"
+shift                      # remaining args go to Python
+
+PY_ARGS="$@"
+
+# ---------------------------------------------
+# Configuration
+# ---------------------------------------------
+SCRIPT="src/MEC/Generate_Data.py"
+LOGDIR="logs"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOGFILE="${LOGDIR}/run_${REMOTE//[^a-zA-Z0-9]/_}_${TIMESTAMP}.log"
+
+# ---------------------------------------------
+# Setup
+# ---------------------------------------------
+mkdir -p "${LOGDIR}"
+
+echo "Running ${SCRIPT} on ${REMOTE}"
+echo "Python args: ${PY_ARGS}"
+echo "Log file: ${LOGFILE}"
+echo "Started at: $(date)" | tee "${LOGFILE}"
+
+# ---------------------------------------------
+# Remote run (serial Python, no MPI)
+# ---------------------------------------------
+ssh "${REMOTE}" bash -s >> "${LOGFILE}" 2>&1 << EOF
+set -e
+
+echo "Remote host: \$(hostname)"
+echo "Remote start time: \$(date)"
+echo ${LOGFILE}
+# Load conda
+source /etc/profile.d/conda.sh
+conda activate fenics-ompi
+
+# Go to the directory where the SSH command was launched
+cd EP-Emulator
+
+# Run python in background
+nohup python "${SCRIPT}" ${PY_ARGS} > ${LOGFILE} 2>&1 &
+REMOTE_PID=\$!
+
+echo "Remote python PID: \$REMOTE_PID"
+echo "Remote finish time: \$(date)"
+EOF
+
+
+STATUS=$?
+
+# ---------------------------------------------
+# Finalize
+# ---------------------------------------------
+echo "Finished at: $(date)" >> "${LOGFILE}"
+echo "Exit status: ${STATUS}" >> "${LOGFILE}"
+
+exit ${STATUS}

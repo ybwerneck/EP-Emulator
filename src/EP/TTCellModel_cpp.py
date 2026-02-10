@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import six,os
+from TTCellModel_njit import run_model_njit_gpu
 
 
 
@@ -76,64 +77,78 @@ class TTCellModel:
              np.savetxt(f,parametersS, fmt='%.8f')
              
     @staticmethod
-    def run(P="",use_gpu=False, regen=True,name="out.txt",cofsF=0):  
-       with open(name, "w") as file:
-        file.write("")  # Creates an empty file
-       
-       count=0
-       countL=0
-       output=name
-       try:
-           with open(name, 'r') as f:
-                 for line in f:
-                      count += 1
-                      countL=0
-                      for i in line:
-                          countL+=1
-       except:
-           count=0
-           
-       try:  
-            countP=0
-            with open(P, 'r') as f:
-                for line in f:
-                     countP += 1
-       except:
-            try:
-                countP=np.shape(P)[0]
-            except:
-                print("  Input distribution or file not given, reusing existing results")
-                countP=count
+    def run(P_array,cofsF=0):  
+        n_samples = P_array.shape[0]
+        results = []
+
+        if batch_size is None or n_samples <= batch_size:
+            batch_size = n_samples  # process all at once
+
+        for start in range(0, n_samples, batch_size):
+            end = min(start + batch_size, n_samples)
+            P_batch = P_array[start:end]
+
+            # Run model on this batch
+            out_batch = run_model_njit_gpu(
+                P_batch,
+                dt=TTCellModel.dt,
+                tf=TTCellModel.tf,
+                ti=TTCellModel.ti,
+                dtS=TTCellModel.dtS,
+            )
+
+            # Process each sample in the batch
+            for a, row in enumerate(out_batch):
+                V = row[-10001:-4, 0]  # last 1000 points of voltage
+                dt = TTCellModel.dt
+
+                # Resting potential
+                V_rest = np.mean(V[-50:-1])
+
+                # Peak potential
+                V_peak = np.max(V)
+
+                # Amplitude
+                amplitude = V_peak - V_rest
+
+                # Derivative and activation time
+                dVdt = np.diff(V) / dt
+                upstroke_idx = np.argmax(dVdt)
+
+                dVdt_max = np.max(dVdt)
+                T_up = upstroke_idx * dt
+
+                # Find minimum after repolarization (for DPA)
+                V_repol_idx = np.argmin(V[upstroke_idx + 15:]) + upstroke_idx
+                T_repol = V_repol_idx * dt
+                DPA = T_repol - T_up
+
+                # APDs
+                APDs_dict = TTCellModel.compute_apd_no_interp(
+                    V,
+                    dt,
+                    V_rest,
+                    V_peak,
+                    fractions=[0.9, 0.5, 0.3],
+                    upstroke_idx=upstroke_idx,
+                )
+                APD90 = APDs_dict[0.9]
+                APD50 = APDs_dict[0.5]
+                APD30 = APDs_dict[0.3]
+
+                results.append({
+                    "Wf": V,
+                    "V_rest": V_rest,
+                    "V_peak": V_peak,
+                    "dVdt_max": dVdt_max,
+                    "Amplitude": amplitude,
+                    "APD80": APD90,
+                    "APD50": APD50,
+                    "APD30": APD30,
+                })
+
+        return results
             
-       
-       if(count==countP and regen==False):
-            print("  Using existing results at ",name) ##!!! NO GUARANTEE SIZE PARAMETERS ARE THE SAME!!!!
-       else:
-   
-            if False==isinstance(P, six.string_types): ##P is file or dist
-         #       print("Solving from scracth for P(",countP,")")
-         #       print("  Generating Input file")
-                TTCellModel.prepareinput(P,cofsF)
-            else:
-          #      print("  Solving from input file ",P)
-            #    print("  Using given input file")
-                inpt=P
-            TTCellModel.callCppmodel(countP,use_gpu,output,"m.txt")
-            
-            #print ("  model output ready at",name," parsing it...")
-            
-            
-       
-       # Delete the file "out.txt" if it exists
-       parsedR=TTCellModel.parseR(name)
-     #  print("  parsing done")
-       if os.path.exists(name):
-            os.remove(name)
-     #       print("  Output File  deleted.")
-       else:
-            print("  Cant clean Output File")
-       return parsedR
-        
 
     @staticmethod
     def setParametersOfInterest(parametersN):

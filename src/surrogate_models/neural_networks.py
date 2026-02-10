@@ -76,21 +76,29 @@ class FullyConnectedNetwork(nn.Module):
 
 ##Neural Network Model Wrapper
 class NModel(ModelInterface):
-    def __init__(self, input_size, output_size, hidden_layer_sizes=(20,), learning_rate=0.01, epochs=1000, device=torch.device("cuda")):
+    def __init__(self, input_size, output_size, hidden_layer_sizes=(20,), learning_rate=0.01, epochs=1000, device=None, name=None):
+        super().__init__(name=name)
+        self.type="Neural_Network"
+        self.input_size = input_size
+        self.output_size = output_size
         self.hidden_layer_sizes = hidden_layer_sizes
         self.learning_rate = learning_rate
         self.epochs = epochs  # Maximum epochs. Use -1 for no maximum.
-        self.type = f"NN_{hidden_layer_sizes}"
-        self.metadata = {
-            "type": self.type,
+        self.device = device or (torch.device("cuda"))
+        
+        # Neural network model
+        self.model = FullyConnectedNetwork(input_size, output_size, hidden_layer_sizes, device=self.device)
+        self.loss_function = nn.L1Loss()  # Using MAE as training metric
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        
+        # Metadata
+        self.metadata.update({
             "hidden_layer_sizes": hidden_layer_sizes,
             "learning_rate": learning_rate,
-        }
-        self.model = FullyConnectedNetwork(input_size, output_size, hidden_layer_sizes, device=device)
-        # Using MAE directly as the training metric.
-        self.loss_function = nn.L1Loss()  
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        self.device=device
+            "epochs": epochs,
+        })
+
+
     def _train(self, x, y, **kwargs):
         tol = kwargs.get("tol", 1e-5)
         patience = kwargs.get("patience", 10)
@@ -107,7 +115,6 @@ class NModel(ModelInterface):
             factor=0.9,     # reduce LR by half
             patience=patience//10,     # wait 5 epochs without improvement
             threshold=tol,  # same threshold as tol
-            verbose=True
         )
 
         # Determine maximum epochs: if self.epochs is -1, run indefinitely.

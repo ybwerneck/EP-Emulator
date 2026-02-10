@@ -1,0 +1,49 @@
+#!/bin/bash
+
+set -e
+
+# -------------------------------------------------
+# Environment
+# -------------------------------------------------
+source /etc/profile.d/conda.sh
+conda activate fenics-ompi
+
+# -------------------------------------------------
+# Global parameters (edit here)
+# -------------------------------------------------
+MODELS=("A" "B" "T" "H")
+
+BASE_DATA="data/Generated_Data_0.1K"
+BASE_MODELS="trainned_models"
+BASE_OUTPUT="Results/"
+
+mkdir -p "${BASE_OUTPUT}"
+
+# -------------------------------------------------
+# Inference loop
+# -------------------------------------------------
+for MODEL in "${MODELS[@]}"; do
+
+    MODEL_FOLDER="${BASE_MODELS}/prob_${MODEL}"
+    X_VAL="${BASE_DATA}/Model${MODEL}/X.csv"
+    Y_VAL="${BASE_DATA}/Model${MODEL}/Y.csv"
+    OUTPUT_CSV="${BASE_OUTPUT}/inference_${MODEL}.csv"
+
+    LOGFILE="logs/inference_${MODEL}.log"
+
+    echo "Running inference | Model ${MODEL}" | tee "${LOGFILE}"
+
+    {
+        time python src/inference/run_surrogate_inf.py \
+            --models_folder "${MODEL_FOLDER}" \
+            --x_val "${X_VAL}" \
+            --y_val "${Y_VAL}" \
+            --output_csv "${OUTPUT_CSV}"
+    } 2>&1 | tee -a "${LOGFILE}"
+
+    echo "Completed inference for Model ${MODEL}" | tee -a "${LOGFILE}"
+    echo "------------------------------------------------" | tee -a "${LOGFILE}"
+
+done
+
+echo "All surrogate inference runs completed."

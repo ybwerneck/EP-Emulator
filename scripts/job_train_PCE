@@ -1,0 +1,38 @@
+#!/bin/bash
+#PBS -J 0-1%8
+#PBS -N train_PCE
+#PBS -l walltime=60:00:00
+#PBS -l select=1:ncpus=1
+#PBS -o logs/masterpce.out
+#PBS -e logs/masterpce.err
+
+cd $PBS_O_WORKDIR
+
+sizes_base=(1K)
+labels_base=(C D)
+
+sizes=()
+labels=()
+for s in "${sizes_base[@]}"; do
+    for l in "${labels_base[@]}"; do
+        sizes+=("$s")
+        labels+=("$l")
+    done
+done
+
+size=${sizes[$PBS_ARRAY_INDEX]}
+label=${labels[$PBS_ARRAY_INDEX]}
+
+outfile="logs/train_pce_${size}_${label}.out"
+errfile="logs/train_pce_${size}_${label}.err"
+
+echo "Running task index $PBS_ARRAY_INDEX: size=${size}, label=${label}"
+echo "Output: $outfile"
+
+export LD_LIBRARY_PATH=/home/yan/MonoBatch/monoalg_deploy_server:/usr/local/cuda-12.3/targets/x86_64-linux/lib/:$LD_LIBRARY_PATH
+export PATH=/home/yan/.conda/bin:$PATH
+
+nvidia-smi
+
+time /home/yan/.conda/envs/myenv/bin/python src/trainning/train_PCE.py "$size" "$label" \
+    > "$outfile" 2> "$errfile"

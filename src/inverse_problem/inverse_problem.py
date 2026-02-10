@@ -8,6 +8,50 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from src.surrogate_models.neural_networks import NModel
 # from src.surrogate_models.gaussian_process import GPModel
 # from src.surrogate_models.pce import PCEModel
+import torch
+
+def gradient_refine(emulator, P_init, Y_target, dist,
+                    lr=1e-2, num_steps=200, lambda_prior=1e-4,
+                    P_min=0.75, P_max=1.25, device="cpu"):
+    """
+    Local gradient-based refinement (Adam) for one candidate.
+    P_init: (n_params,) numpy
+    Y_target: (n_outputs,) numpy
+    Returns: refined_P (numpy), loss_val (float)
+    """
+    torch_device = torch.device(device)
+    n_params = P_init.shape[0]
+
+    # Convert to torch
+    P = torch.tensor(P_init[None, :], dtype=torch.float32, device=torch_device, requires_grad=True)
+    Y_t = torch.tensor(Y_target[None, :], dtype=torch.float32, device=torch_device)
+
+    optimizer = torch.optim.Adam([P], lr=lr)
+
+    def loss_fn(pred, target):
+        return torch.mean(torch.abs(pred - target) / (torch.abs(target) + 1e-8))
+
+    for _ in range(num_steps):
+        optimizer.zero_grad()
+        Q_pred = emulator.forward(P) if hasattr(emulator, "forward") else torch.tensor(emulator.predict(P.detach().cpu().numpy()), dtype=torch.float32, device=torch_device)
+
+        loss_mse = loss_fn(Q_pred, Y_t)
+
+        # simple prior penalty
+        prior_penalty = 0
+        if dist is not None:
+            pdf_vals = dist.pdf(P.detach().cpu().numpy().T) + 1e-12
+            prior_penalty = -np.log(pdf_vals).mean()
+            prior_penalty = torch.tensor(prior_penalty, dtype=torch.float32, device=torch_device)
+
+        loss = loss_mse + lambda_prior * prior_penalty
+        loss.backward()
+        optimizer.step()
+
+        with torch.no_grad():
+            P.clamp_(P_min, P_max)
+
+    return P.detach().cpu().numpy().flatten(), float(loss.item())
 
 
 def run_emulator(P, emulator):
@@ -42,7 +86,8 @@ def inverse_problem_DE(emulator, X, Y, dist,
                        F=0.8, CR=0.7, prior_weight=0.00,
                        P_min=0.75, P_max=1.25,
                        results_dir="Results/InverseProblem",
-                       checkpoint_interval=5):
+                       checkpoint_interval=5,
+                       grad_refine=False):
     """
     Perform inverse problem using Differential Evolution and a surrogate or true model.
     Saves instrumentation (loss curves, parity plots, validation, timings, parameter errors).
@@ -120,6 +165,23 @@ def inverse_problem_DE(emulator, X, Y, dist,
 
         # Iter time
         iter_times.append(time.time() - t_iter)
+# Example: refine the best candidate of each batch every 50 iters
+        if(grad_refine):
+         if (it+1) % 50 == 0:
+            for i in range(batch_size):
+                # pick best so far
+                j_best = np.argmin(best_loss[i])
+                P_start = P_best[i, j_best].copy()
+                Y_t = Y_true[i]
+
+                P_refined, loss_ref = gradient_refine(emulator, P_start, Y_t, dist,
+                                                    lr=1e-2, num_steps=100, lambda_prior=1e-4,
+                                                    P_min=P_min, P_max=P_max)
+
+                # replace if better
+                if loss_ref < best_loss[i, j_best]:
+                    P_best[i, j_best] = P_refined
+                    best_loss[i, j_best] = loss_ref
 
         # Checkpoint instrumentation
         if (it+1) % checkpoint_interval == 0 or (it+1) == num_iters:

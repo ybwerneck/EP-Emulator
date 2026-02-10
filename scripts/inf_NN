@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set -e
+
+# -------------------------------------------------
+# Environment
+# -------------------------------------------------
+source /etc/profile.d/conda.sh
+conda activate fenics-ompi
+
+# -------------------------------------------------
+# Global parameters (edit here)
+# -------------------------------------------------
+DATASET=${1:-0.1K}          # allow override from CLI
+MODELS=("A" "B" "T" "H")
+
+declare -A TRAIN_SCRIPTS
+TRAIN_SCRIPTS["NN"]="src/trainning/train_NN.py"
+TRAIN_SCRIPTS["GP"]="src/trainning/train_GP.py"
+TRAIN_SCRIPTS["PCE"]="src/trainning/train_PCE.py"
+
+# -------------------------------------------------
+# Training loop
+# -------------------------------------------------
+for METHOD in "${!TRAIN_SCRIPTS[@]}"; do
+    SCRIPT="${TRAIN_SCRIPTS[$METHOD]}"
+    LOGFILE="training_${DATASET}_sequential_${METHOD}.log"
+
+    echo "Starting sequential training (${METHOD}, dataset = ${DATASET})" | tee "$LOGFILE"
+
+    {
+        for MODEL in "${MODELS[@]}"; do
+            echo "Running ${METHOD} | Model ${MODEL}"
+            time python "$SCRIPT" "$DATASET" "$MODEL"
+        done
+    } 2>&1 | tee -a "$LOGFILE"
+
+    echo "All runs completed for ${METHOD}" | tee -a "$LOGFILE"
+    echo "---------------------------------------------" | tee -a "$LOGFILE"
+done

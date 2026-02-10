@@ -1,0 +1,57 @@
+#!/bin/bash
+# Job name
+#PBS -N inference
+
+# Output and error files
+#PBS -o logs/saidainf.out
+#PBS -e logs/saidainf.err
+
+# Walltime (hh:mm:ss)
+#PBS -l walltime=60:00:00
+
+# Nodes and cores per node
+#PBS -l nodes=compute-1-0:ppn=1
+
+# Change to submission directory
+cd $PBS_O_WORKDIR
+
+# List nodes allocated
+cat $PBS_NODEFILE
+
+# Clean previous logs
+rm -f logs/saidainf.* mpi_log*
+
+# Load CUDA libraries
+export LD_LIBRARY_PATH=/home/yan/MonoBatch/monoalg_deploy_server:/usr/local/cuda-12.3/targets/x86_64-linux/lib/:$LD_LIBRARY_PATH
+
+# Load user conda (your installation)
+export PATH=/home/yan/.conda/bin:$PATH
+
+
+# Display GPU information
+gpu_count=$(nvidia-smi -L | wc -l)
+for (( i=0; i<gpu_count; i++ )); do
+    gpu_info=$(nvidia-smi -L | sed -n "$((i+1))p")
+    echo "$gpu_info"
+    
+    mig_count=$(nvidia-smi -i $i --query-gpu=mig.mode.current --format=csv,noheader | grep -c Enabled)
+    
+    if [ "$mig_count" -gt 0 ]; then
+        nvidia-smi -i $i --query-compute-apps=uuid --format=csv,noheader,nounits | while IFS= read -r mig_uuid; do
+            echo "  MIG: $mig_uuid"
+        done
+    else
+        echo "  No MIG instances found."
+    fi
+done
+
+# Check GPUs are visible
+nvidia-smi
+
+# Launch MPI Python training
+echo "Running model evaluation..."
+
+time /home/yan/.conda/envs/myenv/bin/python  /home/yan/EP-Emulator/src/inference/run_surrogate_inf.py  --models_folder ./trainned_models/prob_A  --x_val ./data/Generated_Data_5K/ModelA/X.csv  --y_val ./data/Generated_Data_5K/ModelA/Y.csv --output_csv ./Results/A_results.csv 
+time /home/yan/.conda/envs/myenv/bin/python  /home/yan/EP-Emulator/src/inference/run_surrogate_inf.py  --models_folder ./trainned_models/prob_B  --x_val ./data/Generated_Data_5K/ModelB/X.csv  --y_val ./data/Generated_Data_5K/ModelB/Y.csv --output_csv ./Results/B_results.csv 
+
+echo "Evaluation completed."

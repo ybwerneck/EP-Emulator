@@ -73,10 +73,7 @@ def inverse_problem_adam(
     verbose=False,
     true_model=None  # optional wrapper for validation (predict or run_model_to_array style)
 ):
-    """
-    Gradient-based inverse using AdamW. Mirrors the modular logic & style of your Adam script.
-    Returns: P_opt (numpy), Q_opt (numpy), summary (dict)
-    """
+
     os.makedirs(results_dir, exist_ok=True)
 
     # Device
@@ -276,9 +273,7 @@ def inverse_problem_adam(
 
     return P_opt, Q_opt, summary
 
-# ---------------------------------------------------------------------
-# Example usage (keeps the same style and sectioning as your original)
-# ---------------------------------------------------------------------
+
 if __name__ == "__main__":
     # set size params (same style)
     ti = 0; tf = 1000; dt = 0.01; dtS = 1
