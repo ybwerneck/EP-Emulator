@@ -5,14 +5,16 @@ import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from src.surrogate_models.neural_networks import NModel
 # from src.surrogate_models.gaussian_process import GPModel
 # from src.surrogate_models.pce import PCEModel
-import torch
+
 
 def gradient_refine(emulator, P_init, Y_target, dist,
                     lr=1e-2, num_steps=200, lambda_prior=1e-4,
-                    P_min=0.75, P_max=1.25, device="cpu"):
+                    P_min=0.75, P_max=1.25, device="cuda"):
+                    
+    from src.surrogate_models.neural_networks import NModel
+    import torch
     """
     Local gradient-based refinement (Adam) for one candidate.
     P_init: (n_params,) numpy
@@ -33,7 +35,7 @@ def gradient_refine(emulator, P_init, Y_target, dist,
 
     for _ in range(num_steps):
         optimizer.zero_grad()
-        Q_pred = emulator.forward(P) if hasattr(emulator, "forward") else torch.tensor(emulator.predict(P.detach().cpu().numpy()), dtype=torch.float32, device=torch_device)
+        Q_pred = emulator.forward(P) #if hasattr(emulator, "forward") else torch.tensor(emulator.predict(P.detach().cpu().numpy()), dtype=torch.float32, device=torch_device)
 
         loss_mse = loss_fn(Q_pred, Y_t)
 
@@ -98,6 +100,7 @@ def inverse_problem_DE(emulator, X, Y, dist,
     indices = np.random.choice(len(X), batch_size, replace=False)
     X_true, Y_true = X[indices], Y[indices]
     n_params = X_true.shape[1]
+    print(n_params)
     print("Selected batch:", indices)
 
     # Init population

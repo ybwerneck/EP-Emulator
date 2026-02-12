@@ -45,7 +45,7 @@ print(f"Output directory: {output_dir}")
 # Experiment loop
 # ------------------------------------------------------------
 MODELS = [
-    {"name": "Tiso", "class": TisoModel},
+    #{"name": "Tiso", "class": TisoModel},
     {"name": "Ho8",  "class": Ho8Model},
 ]
 

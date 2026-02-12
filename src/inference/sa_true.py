@@ -21,8 +21,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 from src.EP.ModelC import TTCellModelFull as modelB
 from src.EP.ModelA import TTCellModelExt as modelA
-from src.MEC.ModelsCD import TisoModel as modelC
-from src.MEC.ModelsCD import Ho8Model as modelD
+
 from src.EP.wrapper import FullModelWrapper
 
 np.random.seed(1234)
@@ -39,8 +38,7 @@ def load_model(model_key):
     MODEL_REGISTRY = {
         "a": modelA,
         "b": modelB,
-        "h": modelC,
-        "t": modelD,
+
     }
 
     if model_key not in MODEL_REGISTRY:
@@ -197,7 +195,7 @@ def compute_sobol(model_fn, dist, n_base=64):
             problem,
             Y[:, j],
             calc_second_order=False,
-            print_to_console=False,
+            print_to_console=True,
         )
 
         S1[:, j] = Si["S1"]
@@ -253,11 +251,7 @@ def main():
         default=1000,
         help="Number of Monte Carlo samples for UQ"
     )
-    parser.add_argument(
-        "--uq_output_csv",
-        required=True,
-        help="Output CSV for UQ statistics"
-    )
+
 
     parser.add_argument(
         "--sa_output_csv",

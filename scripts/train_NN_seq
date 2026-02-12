@@ -12,7 +12,7 @@ conda activate fenics-ompi
 # Global parameters (edit here)
 # -------------------------------------------------
 DATASET=${1:-0.1K}          # allow override from CLI
-MODELS=("A" "B")
+MODELS=("C" "D")
 
 declare -A TRAIN_SCRIPTS
 TRAIN_SCRIPTS["NN"]="src/trainning/train_NN.py"

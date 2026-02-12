@@ -41,8 +41,6 @@ def run_model_to_array(P,model):
             "V_rest",
             "V_peak",
             "dVdt_max",
-            "Amplitude",
-            "DPA",
             "APD80",
             "APD50",
             "APD30"
@@ -80,8 +78,8 @@ if __name__ == "__main__":
     from src.EP.ModelC import TTCellModelFull as modelC
 
     # Load dataset (for choosing ground truth cases)
-    X = pd.read_csv("data/Generated_Data_5K/ModelC/X.csv").values
-    Y = pd.read_csv("data/Generated_Data_5K/ModelC/Y.csv").values[:,0:]
+    X = pd.read_csv("data/Generated_Data_5K/ModelB/X.csv").values
+    Y = pd.read_csv("data/Generated_Data_5K/ModelB/Y.csv").values[:,0:]
 
     # Wrap the full model
     full_model = FullModelWrapper(modelC)

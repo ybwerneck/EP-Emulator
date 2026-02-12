@@ -73,7 +73,7 @@ class TisoModel():
         'a0': 150, 'b0': 6.0, 'af0': 116.85, 'bf0': 11.83425,
     }
 
-    def get_dist(self, low=0.7, high=1.3):
+    def getDist(self, low=0.7, high=1.3):
         """Return joint distribution for multiplicative coefficients."""
         return cp.J(
             cp.Uniform(low, high),
@@ -84,13 +84,13 @@ class TisoModel():
 
     info = {"npar": 4, "nout": 6}
 
-    def run_model(self, X):
+    def run(self, X):
         """
         Run model where X contains multiplicative coefficients for parameters.
         X shape: (npar, nsamples)
         """
         coefs = np.array([self.params_ref[k] for k in ['a0','b0','af0','bf0']]).reshape(-1,1)
-        X_scaled = X * coefs  # multiply each row by its parameter
+        X_scaled = X.T * coefs  # multiply each row by its parameter
         return run_model(model_tiso, "tiso", self.info, X_scaled)
 
 
@@ -103,7 +103,7 @@ class Ho8Model():
         'as0': 372, 'bs0': 5.16, 'afs0': 410,  'bfs0': 11.3,
     }
 
-    def get_dist(self, low=0.7, high=1.3):
+    def getDist(self, low=0.7, high=1.3):
         """Return joint distribution for multiplicative coefficients."""
         p = self.params_ref
         a0=cp.Uniform(low, high)
@@ -118,13 +118,13 @@ class Ho8Model():
 
     info = {"npar": 8, "nout": 6}
 
-    def run_model(self, X):
+    def run(self, X):
         """
         Run model where X contains multiplicative coefficients for parameters.
         X shape: (npar, nsamples)
         """
         coefs = np.array([self.params_ref[k] for k in ['a0','b0','af0','bf0','as0','bs0','afs0','bfs0']]).reshape(-1,1)
-        X_scaled = X * coefs
+        X_scaled = X.T * coefs
         return run_model(model_ho8, "ho8", self.info, X_scaled)
 
 # =============================================================================

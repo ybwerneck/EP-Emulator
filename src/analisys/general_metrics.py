@@ -25,7 +25,7 @@ global_limits = {
 metrics = list(global_limits.keys())
 
 # Read and process data for all problems
-data_dict = {prob: pd.read_csv(f'Results/validation_results_{prob}.csv') for prob in probs}
+data_dict = {prob: pd.read_csv(f'Results/inference_{prob}.csv') for prob in probs}
 
 # Generate figures for each metric
 for metric in metrics:

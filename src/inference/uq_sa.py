@@ -30,6 +30,7 @@ from src.EP.ModelA import TTCellModelExt as modelA
 from src.MEC.ModelsCD import TisoModel as modelC
 from src.MEC.ModelsCD import Ho8Model as modelD
 from src.EP.wrapper import FullModelWrapper
+from src.surrogate_models.gaussian_process import *
 from src.surrogate_models.DD_Models import ModelInterface as Surrogate
 
 # ---------------------------------------------------------------------
@@ -55,9 +56,16 @@ def compute_uq(model_fn, dist, n_samples):
     return {
         "mean": np.mean(Y, axis=0),
         "std": np.std(Y, axis=0),
-        "q05": np.quantile(Y, 0.05, axis=0),
-        "q95": np.quantile(Y, 0.95, axis=0),
+
     }
+
+
+def compute_uq_from_pce(surrogate):
+    poly = surrogate.model
+    dist = surrogate.dist
+    mean = cp.E(poly, dist)
+    std = cp.Std(poly, dist)
+    return {"mean": mean, "std": std}
 
 def compare_uq(uq_emul, uq_true, eps=1e-12):
     """Relative mean absolute error (avoid division by zero)."""
@@ -65,8 +73,7 @@ def compare_uq(uq_emul, uq_true, eps=1e-12):
     return {
         "mean_rel": rel(uq_emul["mean"], uq_true["mean"]),
         "std_rel": rel(uq_emul["std"], uq_true["std"]),
-        "q05_rel": rel(uq_emul["q05"], uq_true["q05"]),
-        "q95_rel": rel(uq_emul["q95"], uq_true["q95"]),
+
     }
 
 # ---------------------------------------------------------------------
@@ -121,7 +128,7 @@ def evaluate_emulator_folder(emulator_folder, true_uq_csv, true_sa_csv, model, u
     true_uq_df = pd.read_csv(true_uq_csv)
     true_sa_df = pd.read_csv(true_sa_csv)
 
-    uq_true = {key: true_uq_df[key].values for key in ["mean", "std", "q05", "q95"]}
+    uq_true = {key: true_uq_df[key].values for key in ["mean", "std"]}
     sa_true = {
         "S1": true_sa_df.pivot(index="param", columns="output", values="S1").values,
         "ST": true_sa_df.pivot(index="param", columns="output", values="ST").values,
@@ -131,6 +138,7 @@ def evaluate_emulator_folder(emulator_folder, true_uq_csv, true_sa_csv, model, u
     records = []
 
     for fname in os.listdir(emulator_folder):
+        print(f"Evaluating surrogate: {fname}")
         if not fname.endswith((".pkl", ".pth")):
             continue
         path = os.path.join(emulator_folder, fname)
@@ -141,37 +149,75 @@ def evaluate_emulator_folder(emulator_folder, true_uq_csv, true_sa_csv, model, u
             print(f"Skipping {fname}: {e}")
             continue
 
-        # -----------------------------
-        # UQ
-        # -----------------------------
-        start_uq = time.time()
-        uq_emul = compute_uq(model_fn=emulator.predict, dist=dist, n_samples=uq_samples)
-        uq_metrics = compare_uq(uq_emul, uq_true)
-        elapsed_uq = time.time() - start_uq
-        print(f"{fname} UQ metrics: {uq_metrics} (time: {elapsed_uq:.2f}s)")
+        records_emul = []
 
-        # -----------------------------
-        # SA
-        # -----------------------------
-        start_sa = time.time()
-        if hasattr(emulator, "dist") and hasattr(emulator, "model"):
+        # Check if emulator is a PCE
+        is_pce = hasattr(emulator, "dist") and hasattr(emulator, "model")
+
+        if is_pce:
+            # -----------------------------
+            # Entry 1: Use PCE basis
+            # -----------------------------
+            start_time = time.time()
+            uq_emul = compute_uq_from_pce(emulator)
+            uq_metrics = compare_uq(uq_emul, uq_true)
             sa_emul = compute_pce_sa_from_basis(emulator)
+            sa_metrics = compare_sa(sa_emul, sa_true)
+            elapsed = time.time() - start_time
+
+            records_emul.append({
+                "model": fname + "_basis",
+                **uq_metrics,
+                **sa_metrics,
+                "uq_time_s": elapsed / 2,  # optional split if you want separate timings
+                "sa_time_s": elapsed / 2,
+            })
+            print(f"{fname} [PCE basis] metrics: {uq_metrics}, {sa_metrics} (time: {elapsed:.2f}s)")
+
+            # -----------------------------
+            # Entry 2: Use emulator normally
+            # -----------------------------
+            start_uq = time.time()
+            uq_emul_mc =compute_uq(model_fn=emulator.predict, dist=emulator.dist, n_samples=uq_samples) 
+            uq_metrics_mc = compare_uq(uq_emul_mc, uq_true)
+            elapsed_uq = time.time() - start_uq
+
+            start_sa = time.time()
+            sa_emul_mc = compute_sobol(model_fn=emulator.predict, dist=dist, n_base=sa_base)
+            sa_metrics_mc = compare_sa(sa_emul_mc, sa_true)
+            elapsed_sa = time.time() - start_sa
+
+            records_emul.append({
+                "model": fname + "_mc",
+                **uq_metrics_mc,
+                **sa_metrics_mc,
+                "uq_time_s": elapsed_uq,
+                "sa_time_s": elapsed_sa,
+            })
+            print(f"{fname} [MC emulator] metrics: {uq_metrics_mc}, {sa_metrics_mc} (time: {elapsed_uq + elapsed_sa:.2f}s)")
+
         else:
+            # Standard surrogate workflow
+            start_uq = time.time()
+            uq_emul = compute_uq(model_fn=emulator.predict, dist=dist, n_samples=uq_samples)
+            uq_metrics = compare_uq(uq_emul, uq_true)
+            elapsed_uq = time.time() - start_uq
+
+            start_sa = time.time()
             sa_emul = compute_sobol(model_fn=emulator.predict, dist=dist, n_base=sa_base)
-        sa_metrics = compare_sa(sa_emul, sa_true)
-        elapsed_sa = time.time() - start_sa
-        print(f"{fname} SA metrics: {sa_metrics} (time: {elapsed_sa:.2f}s)")
+            sa_metrics = compare_sa(sa_emul, sa_true)
+            elapsed_sa = time.time() - start_sa
 
-        # Record all metrics + timing
-        records.append({
-            "model": fname,
-            **uq_metrics,
-            "uq_time_s": elapsed_uq,
-            **sa_metrics,
-            "sa_time_s": elapsed_sa,
-        })
+            records_emul.append({
+                "model": fname,
+                **uq_metrics,
+                **sa_metrics,
+                "uq_time_s": elapsed_uq,
+                "sa_time_s": elapsed_sa,
+            })
 
-        print(f"Evaluated surrogate: {fname}, total surrogate time: {elapsed_uq + elapsed_sa:.2f}s")
+        records.extend(records_emul)
+        print(f"Evaluated surrogate: {fname}, total surrogate time: {sum(r.get('uq_time_s',0)+r.get('sa_time_s',0) for r in records_emul):.2f}s")
 
     df = pd.DataFrame(records)
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
@@ -190,7 +236,7 @@ def main():
     parser.add_argument("--emulator_folder", required=True, help="Folder containing surrogate models")
     parser.add_argument("--true_uq_csv", required=True, help="CSV with true-model UQ statistics")
     parser.add_argument("--true_sa_csv", required=True, help="CSV with true-model Sobol indices")
-    parser.add_argument("--uq_samples", type=int, default=1000, help="Monte Carlo samples for surrogate UQ")
+    parser.add_argument("--uq_samples", type=int, default=50, help="Monte Carlo samples for surrogate UQ")
     parser.add_argument("--sa_base", type=int, default=32, help="Base Sobol sample size (Saltelli)")
     parser.add_argument("--output_csv", required=True, help="Output CSV with surrogate error metrics + timings")
 
