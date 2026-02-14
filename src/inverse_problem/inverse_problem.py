@@ -1,72 +1,84 @@
 import numpy as np
 import pandas as pd
-import os, sys, pickle
+import os, sys, pickle, time, json
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-# from src.surrogate_models.gaussian_process import GPModel
-# from src.surrogate_models.pce import PCEModel
+# ============================================================
+# Gradient refinement
+# ============================================================
 
-
-def gradient_refine(emulator, P_init, Y_target, dist,
-                    lr=1e-2, num_steps=200, lambda_prior=1e-4,
+def gradient_refine(emulator, P_init, Y_target, dist=None,
+                    lr=0.02, num_steps=20, lambda_prior=0.0,
                     P_min=0.75, P_max=1.25, device="cuda"):
-                    
-    from src.surrogate_models.neural_networks import NModel
-    import torch
     """
-    Local gradient-based refinement (Adam) for one candidate.
-    P_init: (n_params,) numpy
-    Y_target: (n_outputs,) numpy
-    Returns: refined_P (numpy), loss_val (float)
-    """
-    torch_device = torch.device(device)
-    n_params = P_init.shape[0]
+    Quick gradient refinement for a candidate P_init.
 
-    # Convert to torch
-    P = torch.tensor(P_init[None, :], dtype=torch.float32, device=torch_device, requires_grad=True)
-    Y_t = torch.tensor(Y_target[None, :], dtype=torch.float32, device=torch_device)
+    Returns:
+        refined_P: numpy array
+        best_loss: float
+    """
+    import torch
+    import torch.nn.functional as F
+    import numpy as np
+
+    device = torch.device(device)
+    P = torch.tensor(P_init[None, :], dtype=torch.float32, device=device, requires_grad=True)
+    Y_t = torch.tensor(Y_target[None, :], dtype=torch.float32, device=device)
 
     optimizer = torch.optim.Adam([P], lr=lr)
 
-    def loss_fn(pred, target):
-        return torch.mean(torch.abs(pred - target) / (torch.abs(target) + 1e-8))
+    best_loss = float('inf')
+    best_P = P.clone().detach()
 
     for _ in range(num_steps):
         optimizer.zero_grad()
-        Q_pred = emulator.forward(P) #if hasattr(emulator, "forward") else torch.tensor(emulator.predict(P.detach().cpu().numpy()), dtype=torch.float32, device=torch_device)
 
-        loss_mse = loss_fn(Q_pred, Y_t)
+        # Forward pass
+        Q_pred = emulator.forward(P)
 
-        # simple prior penalty
-        prior_penalty = 0
-        if dist is not None:
-            pdf_vals = dist.pdf(P.detach().cpu().numpy().T) + 1e-12
-            prior_penalty = -np.log(pdf_vals).mean()
-            prior_penalty = torch.tensor(prior_penalty, dtype=torch.float32, device=torch_device)
+        # Smooth L1 loss for better stability with few steps
+        loss_data = F.smooth_l1_loss(Q_pred, Y_t)
 
-        loss = loss_mse + lambda_prior * prior_penalty
+        # Optional prior
+        loss_prior = 0.0
+        if dist is not None and lambda_prior > 0:
+            pdf_vals = dist.pdf(P.detach().cpu().numpy()) + 1e-12
+            loss_prior = -np.log(pdf_vals).mean()
+            loss_prior = torch.tensor(loss_prior, dtype=torch.float32, device=device)
+
+        loss = loss_data + lambda_prior * loss_prior
         loss.backward()
         optimizer.step()
 
+        # Clamp parameters
         with torch.no_grad():
-            P.clamp_(P_min, P_max)
+            P[:] = P.clamp(P_min, P_max)
 
-    return P.detach().cpu().numpy().flatten(), float(loss.item())
+        # Track best
+        if loss.item() < best_loss:
+            best_loss = loss.item()
+            best_P = P.clone().detach()
 
+    return best_P.cpu().numpy().flatten(), best_loss
+
+
+# ============================================================
+# Utilities
+# ============================================================
 
 def run_emulator(P, emulator):
-    """Evaluate emulator or model on parameter matrix P (n_candidates x n_params)."""
+    """Evaluate emulator on parameter matrix P (N x n_params)."""
     return emulator.predict(P)
 
+
 def prior_loss(P, dist):
-    """Negative log prior (regularization)."""
     pdf_vals = dist.pdf(P.T) + 1e-12
     return -np.log(pdf_vals)
 
+
 def pick_three(pop_size):
-    """Helper for DE mutation."""
     r1, r2, r3 = np.zeros(pop_size,int), np.zeros(pop_size,int), np.zeros(pop_size,int)
     for j in range(pop_size):
         choices = np.arange(pop_size)
@@ -75,67 +87,99 @@ def pick_three(pop_size):
         r1[j], r2[j], r3[j] = sel
     return r1, r2, r3
 
-# -----------------------------------------------------------
-# Inverse problem with DE
-# -----------------------------------------------------------
 
-import os, time, json
-import numpy as np
-import matplotlib.pyplot as plt
+def compute_param_error(P, X_true):
+    """
+    P: (batch, pop, n_params)
+    X_true: (batch, n_params)
+    returns: (batch, pop, n_params)
+    """
+    return np.abs(P - X_true[:, None, :])
+
+
+def compute_y_error(Y_pred, Y_true):
+    """
+    Y_pred: (batch, pop, n_outputs)
+    Y_true: (batch, n_outputs)
+    returns: (batch, pop, n_outputs)
+    """
+    return np.abs(Y_pred - Y_true[:, None, :]) / (np.abs(Y_true[:, None, :]) + 1e-12)
+
+
+# ============================================================
+# Inverse problem with Differential Evolution
+# ============================================================
 
 def inverse_problem_DE(emulator, X, Y, dist,
                        batch_size=10, pop_size=100, num_iters=2000,
-                       F=0.8, CR=0.7, prior_weight=0.00,
+                       F=0.6, CR=0.7, prior_weight=0.0,
                        P_min=0.75, P_max=1.25,
                        results_dir="Results/InverseProblem",
-                       checkpoint_interval=5,
-                       grad_refine=False):
-    """
-    Perform inverse problem using Differential Evolution and a surrogate or true model.
-    Saves instrumentation (loss curves, parity plots, validation, timings, parameter errors).
-    """
+                       checkpoint_interval=50,
+                       grad_refine=False,
+                       indices=None):
+
     os.makedirs(results_dir, exist_ok=True)
 
-    # Select ground truth batch
-    indices = np.random.choice(len(X), batch_size, replace=False)
+    # --------------------------------------------------------
+    # Batch selection
+    # --------------------------------------------------------
+    indices = np.random.choice(len(X), batch_size, replace=False) if indices is None else indices
     X_true, Y_true = X[indices], Y[indices]
-    n_params = X_true.shape[1]
-    print(n_params)
-    print("Selected batch:", indices)
 
-    # Init population
+    n_params = X_true.shape[1]
+    n_outputs = Y_true.shape[1]
+
+    print("Selected batch indices:", indices)
+
+    # --------------------------------------------------------
+    # Population initialization
+    # --------------------------------------------------------
     np.random.seed(42)
-    P_candidates = np.array([dist.sample(pop_size, rule="latin_hypercube").T
-                             for _ in range(batch_size)])
+
+    P_candidates = np.array([
+        dist.sample(pop_size, rule="latin_hypercube").T
+        for _ in range(batch_size)
+    ])  # (batch, pop, n_params)
+
     P_best = P_candidates.copy()
     best_loss = np.full((batch_size, pop_size), np.inf)
 
-    # History trackers
-    history_best, history_median, history_val = [], [], []
-    history_param_error = []  # Track parameter error
+    # --------------------------------------------------------
+    # Instrumentation storage (FULL)
+    # --------------------------------------------------------
+    param_error_hist = []   # (it, batch, pop, n_params)
+    y_error_hist = []       # (it, batch, pop, n_outputs)
+    loss_hist = []          # (it, batch, pop)
+
+    history_best = []
+    history_median = []
     iter_times = []
+
     t0 = time.time()
 
+    # --------------------------------------------------------
     # Initial evaluation
+    # --------------------------------------------------------
     P_flat = P_candidates.reshape(batch_size * pop_size, n_params)
     Y_pred_all = run_emulator(P_flat, emulator)
 
     for i in range(batch_size):
         start, end = i * pop_size, (i+1) * pop_size
         preds = Y_pred_all[start:end]
-        invalid = ~np.isfinite(preds).all(axis=1)
         mse = np.mean((preds - Y_true[i])**2, axis=1)
-      #  mse[invalid] = 1e6
-        prior_reg = np.abs(prior_weight * prior_loss(P_candidates[i], dist))
-        best_loss[i] = mse + prior_reg
+        best_loss[i] = mse
 
+    # --------------------------------------------------------
     # Evolution loop
+    # --------------------------------------------------------
     for it in range(num_iters):
         t_iter = time.time()
 
         r1, r2, r3 = pick_three(pop_size)
         a, b, c = P_candidates[:, r1, :], P_candidates[:, r2, :], P_candidates[:, r3, :]
         mutants = a + F * (b - c)
+
         cross = np.random.rand(batch_size, pop_size, n_params) < CR
         P_trial = np.where(cross, mutants, P_candidates)
         P_trial = np.clip(P_trial, P_min, P_max)
@@ -146,9 +190,8 @@ def inverse_problem_DE(emulator, X, Y, dist,
         for i in range(batch_size):
             start, end = i * pop_size, (i+1) * pop_size
             preds = Y_pred_all[start:end]
-            invalid = ~np.isfinite(preds).all(axis=1)
             mse = np.mean((preds - Y_true[i])**2, axis=1)
-        #    mse[invalid] = 1e6
+
             prior_reg = np.abs(prior_weight * prior_loss(P_trial[i], dist))
             total = mse + prior_reg
 
@@ -158,39 +201,58 @@ def inverse_problem_DE(emulator, X, Y, dist,
 
         P_candidates = P_best.copy()
 
-        # Track losses
-        history_best.append(best_loss.min())
-        history_median.append(np.median(best_loss))
-
-        # Track parameter error (mean absolute error per batch)
-        param_errors = np.mean(np.abs(P_best - X_true[:, None, :]), axis=(1, 2))  # shape: (batch_size,)
-        history_param_error.append(param_errors)
-
-        # Iter time
-        iter_times.append(time.time() - t_iter)
-# Example: refine the best candidate of each batch every 50 iters
-        if(grad_refine):
-         if (it+1) % 50 == 0:
+   
+        # ----------------------------------------------------
+        # Gradient refinement (optional)
+        # ----------------------------------------------------
+        if grad_refine and (it+1) % 1 == 0:
             for i in range(batch_size):
-                # pick best so far
                 j_best = np.argmin(best_loss[i])
                 P_start = P_best[i, j_best].copy()
                 Y_t = Y_true[i]
 
-                P_refined, loss_ref = gradient_refine(emulator, P_start, Y_t, dist,
-                                                    lr=1e-2, num_steps=100, lambda_prior=1e-4,
-                                                    P_min=P_min, P_max=P_max)
+                P_refined, loss_ref = gradient_refine(
+                    emulator, P_start, Y_t, dist,
+                    lr=1e-4, num_steps=5, lambda_prior=0,
+                    P_min=P_min, P_max=P_max
+                )
 
-                # replace if better
+                print(np.mean(loss_ref<best_loss[i, j_best]), f"Refinement improved loss: {best_loss[i, j_best]:.6e} -> {loss_ref:.6e}")
                 if loss_ref < best_loss[i, j_best]:
                     P_best[i, j_best] = P_refined
                     best_loss[i, j_best] = loss_ref
-
-        # Checkpoint instrumentation
+            print(f"Iter {it+1}/{num_iters} after refinement | Best loss {best_loss.min():.6e}")
+        # ----------------------------------------------------
+        # Checkpoint logging
+        # ----------------------------------------------------
         if (it+1) % checkpoint_interval == 0 or (it+1) == num_iters:
+
+                    # ----------------------------------------------------
+            # Full instrumentation
+            # ----------------------------------------------------
+            # Parameter errors
+            param_err = compute_param_error(P_best, X_true)
+            param_error_hist.append(param_err.copy())
+
+            # Y errors
+            P_flat = P_best.reshape(batch_size * pop_size, n_params)
+            Y_pred_all = run_emulator(P_flat, emulator)
+            Y_pred_all = Y_pred_all.reshape(batch_size, pop_size, n_outputs)
+
+            y_err = compute_y_error(Y_pred_all, Y_true)
+            y_error_hist.append(y_err.copy())
+
+            # Loss
+            loss_hist.append(best_loss.copy())
+
+            # Scalars
+            history_best.append(best_loss.min())
+            history_median.append(np.median(best_loss))
+
+            iter_times.append(time.time() - t_iter)
+
             mean_time = np.mean(iter_times[-checkpoint_interval:])
-            print(f"Iter {it+1}/{num_iters} | Best loss {history_best[-1]:.6f} "
-                  f"| mean iter time {mean_time:.3f}s")
+            print(f"Iter {it+1}/{num_iters} | Best loss {history_best[-1]:.6e} | mean iter time {mean_time:.3f}s")
 
             # Convergence plot
             plt.figure()
@@ -201,85 +263,45 @@ def inverse_problem_DE(emulator, X, Y, dist,
             plt.ylabel("Loss")
             plt.legend()
             plt.title("Convergence")
-            plt.savefig(os.path.join(results_dir, f"convergence_iter.png"), dpi=200)
+            plt.savefig(os.path.join(results_dir, "convergence.png"), dpi=200)
             plt.close()
 
-            # Parameter error plot
-            plt.figure()
-            for i in range(batch_size):
-                plt.plot([h[i] for h in history_param_error], label=f"Batch {i}")
-            plt.xlabel("Iteration")
-            plt.ylabel("Mean Parameter Error")
-            plt.yscale("log")
-            plt.title("Parameter Error Over Iterations")
-           # plt.legend()
-            plt.savefig(os.path.join(results_dir, "parameter_error_iter.png"), dpi=200)
-            plt.close()
+            # ========================================================
+            # Save full scientific instrumentation
+            # ========================================================
 
-            # ---------------------------------------------------------
-            # Parity plots (colored by Y error)
-            # ---------------------------------------------------------
-            P_final = P_best.copy()
-            n_rows = int(np.ceil(n_params / 3))
-            fig, axes = plt.subplots(n_rows, 3, figsize=(12, 4 * n_rows))
-            axes = axes.flatten()
+            np.save(os.path.join(results_dir, "param_error_full.npy"),
+                    np.array(param_error_hist))
+            #print(param_error_hist[-1])  # shape: (batch, pop, n_params)
+            # shape: (iters, batch, pop, n_params)
 
-            P_flat = P_final.reshape(batch_size * pop_size, n_params)
-        #    Y_pred_all = run_emulator(P_flat, emulator)
+            np.save(os.path.join(results_dir, "y_error_full.npy"),
+                    np.array(y_error_hist))
+            # shape: (iters, batch, pop, n_outputs)
 
-            Y_errors = []
-            for i in range(batch_size):
-                start, end = i * pop_size, (i + 1) * pop_size
-                true = Y_true[i]
-                preds = Y_pred_all[start:end]
-                rel_err = np.mean(np.abs(preds - true) / (np.abs(true) + 1e-12), axis=1)
-                Y_errors.append(rel_err)
-            Y_errors = np.concatenate(Y_errors)
-        #    print(Y_pred_all[0])
-#print(Y_errors[0])
-            from matplotlib.colors import Normalize
-            norm = Normalize(vmin=0, vmax=1)
-            # Cap errors at 1.0
-            Y_errors_m = np.minimum(10*Y_errors, 1.0)
-       #     print(Y_errors_m)
-            for i in range(n_params):
-                true_params = np.repeat(X_true[:, i], pop_size)
-                recovered = P_final[:, :, i].flatten()
+            np.save(os.path.join(results_dir, "loss_full.npy"),
+                    np.array(loss_hist))
+            # shape: (iters, batch, pop)
 
-                sc = axes[i].scatter(
-                    true_params, recovered,
-                    c=Y_errors_m, cmap="viridis", vmin=0, vmax=1,   # enforce same 0–1 scale
-                    alpha=0.7, s=25, edgecolors="none"
-                )
+            np.save(os.path.join(results_dir, "P_best_final.npy"), P_best)
+            np.save(os.path.join(results_dir, "X_true.npy"), X_true)
+            np.save(os.path.join(results_dir, "Y_true.npy"), Y_true)
+            np.save(os.path.join(results_dir, "indices.npy"), indices)
 
-                axes[i].plot([P_min, P_max], [P_min, P_max], 'r--')
-                axes[i].set_xlabel(f"True Param {i+1}")
-                axes[i].set_ylabel(f"Recovered Param {i+1}")
-                axes[i].set_title(f"Parameter {i+1}")
+            summary = {
+                "total_runtime_sec": float(time.time() - t0),
+                "final_best_loss": float(history_best[-1]),
+                "final_median_loss": float(history_median[-1]),
+                "mean_iter_time": float(np.mean(iter_times)),
+                "batch_indices": indices.tolist(),
+                "n_params": int(n_params),
+                "n_outputs": int(n_outputs),
+                "batch_size": int(batch_size),
+                "pop_size": int(pop_size),
+                "num_iters": int(num_iters)
+            }
 
-            for j in range(n_params, len(axes)):
-                fig.delaxes(axes[j])
+            with open(os.path.join(results_dir, "results_summary.json"), "w") as f:
+                json.dump(summary, f, indent=2)
 
-            cbar = fig.colorbar(sc, ax=axes.tolist(), shrink=0.95)
-            cbar.set_label("Relative Y Error")
-            plt.suptitle("Parity Plots for Parameters (Colored by Y Error)", fontsize=16)
-            plt.savefig(os.path.join(results_dir, "emulator_inverse_parity.png"), dpi=300)
-            plt.close(fig)
-
-    # Metrics summary
-    runtime = time.time() - t0
-    summary = {
-        "total_runtime_sec": runtime,
-        "final_best_loss": float(history_best[-1]),
-        "final_median_loss": float(history_median[-1]),
-        "mean_iter_time": float(np.mean(iter_times)),
-        "batch_indices": indices.tolist(),
-        "final_param_error": [float(h[-1]) for h in history_param_error]
-    }
-    with open(os.path.join(results_dir, "results_summary.json"), "w") as f:
-        json.dump(summary, f, indent=2)
-
-    # Save final parameter error history
-    np.save(os.path.join(results_dir, "history_param_error.npy"), np.array(history_param_error))
-
-    return P_final, history_best, summary
+    return P_best, history_best, summary

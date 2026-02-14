@@ -56,7 +56,7 @@ class TTCellModelFull(TTCellModel):
         return np.array(params)
     
     @staticmethod
-    def getDist(low=0,high=1):     
+    def getDist(low=0.75,high=1.25):     
         k_i=cp.Uniform(low,high) 
         k_o=cp.Uniform(low,high)
         atp=cp.Uniform(low,high)
@@ -76,6 +76,7 @@ class TTCellModelFull(TTCellModel):
 
     @staticmethod
     def run(P="",use_gpu=False, regen=True,name="out.txt"):  
+        
         return TTCellModel.run(np.array([TTCellModelFull.cofs(p) for p in P]))
 
 

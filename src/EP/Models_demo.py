@@ -9,7 +9,7 @@ from src.EP.ModelB import TTCellModelChannel as modelB
 from src.EP.ModelC import TTCellModelFull as modelC
 
 # Parameters for time configuration
-ti, tf, dt, dtS = 10000, 11000, 0.01, 1
+ti, tf, dt, dtS = 1000, 1100, 0.01, 1
 n=256
 g=True
 # Function to plot with uncertainty shades

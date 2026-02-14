@@ -57,7 +57,7 @@ plot_df = pd.DataFrame({
 # -----------------------------
 # Plotting layout
 # -----------------------------
-fig, axes = plt.subplots(2, 1, figsize=(14, 10), sharey=False)
+fig, axes = plt.subplots(2, 1, figsize=(12, 12), sharey=False)
 
 groups = [
     ["A", "B"],   # top subplot  -> A_E, B_E
@@ -101,15 +101,15 @@ legend_handles = [Patch(color=color_mapping[m], label=m) for m in model_names]
 fig.legend(
     handles=legend_handles,
     title="Emulator",
-    fontsize=12,
-    title_fontsize=12,
+    fontsize=18,
+    title_fontsize=18,
     loc='center right',
-    bbox_to_anchor=(0.94, 0.5)
+    bbox_to_anchor=(0.98, 0.5)
 )
 
 
-fig.supxlabel("Problem", fontsize=14)
-fig.suptitle("Surrogate validation accuracy across problems", fontsize=17)
+fig.supxlabel("Problem", fontsize=18)
+fig.suptitle("Surrogate validation accuracy across problems", fontsize=22)
 
 plt.tight_layout()
 plt.subplots_adjust(right=0.82, top=0.92)

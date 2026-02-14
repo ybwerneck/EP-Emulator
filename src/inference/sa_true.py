@@ -97,7 +97,7 @@ def save_uq(uq, output_csv):
 # SOBOL / SA COMPUTATION (PCE-BASED)
 # ---------------------------------------------------------------------
 
-def compute_sobol(model_fn, dist, poly_order=3):
+def compute_sobosl(model_fn, dist, poly_order=3):
     """
     Compute first-order and total Sobol indices using PCE.
     """
@@ -130,7 +130,7 @@ def compute_sobol(model_fn, dist, poly_order=3):
 from SALib.sample import sobol as sobol_sample
 from SALib.analyze import sobol as sobol_analyze
 
-def compute_sobol(model_fn, dist, n_base=64):
+def compute_sobol(model_fn, dist, n_base=128):
     """
     Compute first-order and total Sobol indices using SALib.
 
@@ -248,7 +248,7 @@ def main():
     parser.add_argument(
         "--uq_samples",
         type=int,
-        default=1000,
+        default=5000,
         help="Number of Monte Carlo samples for UQ"
     )
 

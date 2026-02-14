@@ -117,7 +117,7 @@ class ModelInterface:
             X_norm = Xsd
 
 
-        print(np.shape(X_norm))
+        #print(np.shape(X_norm))
         y_normalized = self._predict(X_norm, **kwargs)
         return self.denormalize_y(y_normalized)
 

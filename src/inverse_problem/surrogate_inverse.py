@@ -22,8 +22,14 @@ if __name__ == "__main__":
     emulator = nmodel
 
     from src.EP.ModelC import TTCellModelFull as modelC
-    dist = modelC.getDist(low=0.75, high=1.25)
+    batch_size=15
+    np.random.seed(42)
+    indices = np.random.choice(len(X), batch_size, replace=False)
 
-    P_final, hist,S = inverse_problem_DE(emulator,X,Y,dist, batch_size=30,checkpoint_interval=10, pop_size=150, num_iters=1000,results_dir="Results/InverseProblem/NN_Model",grad_refine=False)
-    print(S)
+    dist = modelC.getDist(low=0.75, high=1.25)
+    print(X)
+
+    P_final, hist,S = inverse_problem_DE(emulator,X,Y,dist, batch_size=batch_size,checkpoint_interval=50, pop_size=150, num_iters=10000,results_dir="Results/InverseProblem/NN",grad_refine=False)
+
+    P_final, hist,S = inverse_problem_DE(emulator,X,Y,dist, batch_size=batch_size,checkpoint_interval=50, pop_size=150, num_iters=10000,results_dir="Results/InverseProblem/NN_da",grad_refine=True)
     

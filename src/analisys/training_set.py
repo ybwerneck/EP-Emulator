@@ -55,7 +55,7 @@ lc_df = pd.DataFrame(records)
 # Plot: one subplot per problem
 # -----------------------------
 n_probs = len(probs)
-fig, axes = plt.subplots(2, 2, figsize=(12, 10), sharex=True, sharey=False)
+fig, axes = plt.subplots(2, 2, figsize=(12, 12), sharex=True, sharey=False)
 axes = axes.flatten()
 if n_probs == 1:
     axes = [axes]
@@ -81,11 +81,12 @@ for ax, prob in zip(axes, probs):
     ax.set_xscale("log")
     ax.set_yscale("log")
 
-    ax.set_title(prob_labels[prob], fontsize=15)
-    ax.set_xlabel("Training set size $N$", fontsize=13)
+    ax.set_title(prob_labels[prob], fontsize=18)
+    ax.set_xlabel("Training set size $N$", fontsize=18)
 
 # Shared y-label
-axes[0].set_ylabel("Overall MARE", fontsize=13)
+axes[0].set_ylabel("Overall MARE", fontsize=18)
+axes[2].set_ylabel("Overall MARE", fontsize=18)
 
 # -----------------------------
 # Global legend
@@ -95,16 +96,16 @@ legend_handles = [Patch(color=color_mapping[m], label=m) for m in model_names]
 fig.legend(
     handles=legend_handles,
     title="Surrogate model",
-    fontsize=11,
-    title_fontsize=12,
+    fontsize=18,
+    title_fontsize=18,
     loc='center left',
-    bbox_to_anchor=(1.01, 0.5)
+    bbox_to_anchor=(0.98, 0.5)
 )
 
 # -----------------------------
 # Titles and layout
 # -----------------------------
-fig.suptitle("Learning curves across benchmark problems", fontsize=16)
+fig.suptitle("Learning curves across benchmark problems", fontsize=22)
 
 plt.tight_layout()
 #plt.subplots_adjust(right=0.82, top=0.90)

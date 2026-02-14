@@ -61,7 +61,7 @@ cols = 2
 rows = int(np.ceil(n_probs / cols))
 fig, axes = plt.subplots(
     rows, cols,
-    figsize=(16, 6 * rows),
+    figsize=(12, 6 * rows),
     sharex='col',   # x-axis shared within each column
     sharey='row'    # y-axis shared within each row
 )
@@ -86,7 +86,7 @@ for idx, prob in enumerate(probs):
         key=lambda x: model_names.index(x)
     )
     present_colors = {m: color_mapping[m] for m in present_models}
-    data['Inference Time (s)'] = data['Inference Time (s)'] * 100
+    data['Inference Time (s)'] = data['Inference Time (s)'] 
     sns.scatterplot(
         data=data,
         x='Training Time (s)',
@@ -124,7 +124,7 @@ for idx, prob in enumerate(probs):
 for j in range(idx + 1, len(axes)):
     fig.delaxes(axes[j])
 
-fig.suptitle("Training and Inference Time Scaling", fontsize=20)
+fig.suptitle("Training and Inference Time Scaling", fontsize=22)
 
 # -----------------------------
 # Legends
@@ -132,13 +132,14 @@ fig.suptitle("Training and Inference Time Scaling", fontsize=20)
 
 # Model legend
 model_handles = [Patch(color=color_mapping[m], label=m) for m in model_names]
+
 fig.legend(
     handles=model_handles,
-    title='Emulator',
+    title="Surrogate model",
     fontsize=18,
     title_fontsize=18,
-    loc='center right',
-    bbox_to_anchor=(0.999, 0.55)
+    loc='center left',
+    bbox_to_anchor=(0.98, 0.5)
 )
 
 # Training-size legend (marker size)
@@ -151,25 +152,15 @@ fig.legend(
     title='Set size',
     fontsize=18,
     title_fontsize=18,
-    loc='center right',
-    bbox_to_anchor=(0.999, 0.25)
+    loc='center left',
+    bbox_to_anchor=(0.98, 0.25)
 )
 
-# True model legend
-true_line = plt.Line2D([], [], color='black', linestyle='--', linewidth=2, label='True model')
-fig.legend(
-    handles=[true_line],
-    title='Reference',
-    fontsize=18,
-    title_fontsize=18,
-    loc='center right',
-    bbox_to_anchor=(0.999, 0.80)
-)
+
 
 # -----------------------------
 # Save figure
 # -----------------------------
 plt.tight_layout()
-plt.subplots_adjust(right=0.88)
 plt.savefig('Results/plots/compute_training_inference_scaling.png', dpi=600, bbox_inches='tight')
 # plt.show()

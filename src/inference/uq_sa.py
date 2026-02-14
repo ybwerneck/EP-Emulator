@@ -60,11 +60,13 @@ def compute_uq(model_fn, dist, n_samples):
     }
 
 
-def compute_uq_from_pce(surrogate):
+def compute_uq_from_pce(surrogate,dist):
     poly = surrogate.model
-    dist = surrogate.dist
     mean = cp.E(poly, dist)
     std = cp.Std(poly, dist)
+    print(mean)
+    mean,std=surrogate.denormalize_y(mean),surrogate.denormalize_y(std)
+    print(mean)
     return {"mean": mean, "std": std}
 
 def compare_uq(uq_emul, uq_true, eps=1e-12):
@@ -104,12 +106,12 @@ def compute_sobol(model_fn, dist, n_base=32):
 
     return {"S1": S1, "ST": ST}
 
-def compute_pce_sa_from_basis(surrogate):
+def compute_pce_sa_from_basis(surrogate,dist):
     """
     Compute first-order sensitivities from a PCE NDPoly surrogate.
     """
     poly = surrogate.model
-    dist = surrogate.dist
+    
     S1 = cp.Sens_m(poly, dist)
     return {"S1": S1}
 
@@ -153,15 +155,19 @@ def evaluate_emulator_folder(emulator_folder, true_uq_csv, true_sa_csv, model, u
 
         # Check if emulator is a PCE
         is_pce = hasattr(emulator, "dist") and hasattr(emulator, "model")
-
+        
         if is_pce:
+            if(emulator.P>2):
+                print(f"Skipping {fname} PCE with order {emulator.P} (too high for SA)")
+                continue
             # -----------------------------
             # Entry 1: Use PCE basis
             # -----------------------------
             start_time = time.time()
-            uq_emul = compute_uq_from_pce(emulator)
+            print(dist)
+            uq_emul = compute_uq_from_pce(emulator,dist)
             uq_metrics = compare_uq(uq_emul, uq_true)
-            sa_emul = compute_pce_sa_from_basis(emulator)
+            sa_emul = compute_pce_sa_from_basis(emulator,dist)
             sa_metrics = compare_sa(sa_emul, sa_true)
             elapsed = time.time() - start_time
 
@@ -197,6 +203,7 @@ def evaluate_emulator_folder(emulator_folder, true_uq_csv, true_sa_csv, model, u
             print(f"{fname} [MC emulator] metrics: {uq_metrics_mc}, {sa_metrics_mc} (time: {elapsed_uq + elapsed_sa:.2f}s)")
 
         else:
+            continue
             # Standard surrogate workflow
             start_uq = time.time()
             uq_emul = compute_uq(model_fn=emulator.predict, dist=dist, n_samples=uq_samples)
@@ -236,8 +243,8 @@ def main():
     parser.add_argument("--emulator_folder", required=True, help="Folder containing surrogate models")
     parser.add_argument("--true_uq_csv", required=True, help="CSV with true-model UQ statistics")
     parser.add_argument("--true_sa_csv", required=True, help="CSV with true-model Sobol indices")
-    parser.add_argument("--uq_samples", type=int, default=50, help="Monte Carlo samples for surrogate UQ")
-    parser.add_argument("--sa_base", type=int, default=32, help="Base Sobol sample size (Saltelli)")
+    parser.add_argument("--uq_samples", type=int, default=5000, help="Monte Carlo samples for surrogate UQ")
+    parser.add_argument("--sa_base", type=int, default=128, help="Base Sobol sample size (Saltelli)")
     parser.add_argument("--output_csv", required=True, help="Output CSV with surrogate error metrics + timings")
 
     args = parser.parse_args()
