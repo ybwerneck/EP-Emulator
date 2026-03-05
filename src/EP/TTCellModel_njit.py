@@ -84,10 +84,11 @@ class TTCellModel:
         return APDs
 
     @staticmethod
-    def run(P_array,batch_size=None):
+    def run(P_array,batch_size=2000):
         n_samples = P_array.shape[0]
         results = []
-
+        print(f"Running TTCellModel with {n_samples} samples")
+        print("time parameters:", TTCellModel.ti, TTCellModel.tf, TTCellModel.dt, TTCellModel.dtS)
         if batch_size is None or n_samples <= batch_size:
             batch_size = n_samples  # process all at once
 

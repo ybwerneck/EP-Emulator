@@ -8,6 +8,7 @@ import sys
 import mpi4py.MPI as PMPI
 import matplotlib.pyplot as plt
 import os
+
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -133,7 +134,15 @@ class Ho8Model():
 import numpy as np
 import logging
 from multiprocessing import Pool
-
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["BLIS_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["NUMBA_NUM_THREADS"] = "1"
+os.environ["NUMBA_THREADING_LAYER"] = "workqueue"
+os.environ["OMP_DYNAMIC"] = "FALSE"
+os.environ["MKL_DYNAMIC"] = "FALSE"
 
     # ------------------------------------------------------------------
     # Geometry (built once per process)
@@ -157,7 +166,7 @@ def _run_single_sample(args):
         'ds': ds, 'nmesh': nmesh,
         'f0': f0, 's0': s0, 'n0': n0,
     }
-
+    out = runner(geoparams, x, i)
     try:
         out = runner(geoparams, x, i)
         if out is None:
@@ -220,9 +229,13 @@ def run_model(runner, model_name, info, X, nproc=1):
     # ------------------------------------------------------------------
     # Parallel execution
     # ------------------------------------------------------------------
-    with Pool(processes=nproc) as pool:
+    with Pool(processes=16) as pool:
         results = pool.map(_run_single_sample, tasks)
 
+    ##sERIAL
+    #results=[]
+    #for task in tasks:
+     #   results.append(_run_single_sample(task))
     # ------------------------------------------------------------------
     # Gather results
     # ------------------------------------------------------------------

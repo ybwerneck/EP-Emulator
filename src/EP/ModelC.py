@@ -76,7 +76,7 @@ class TTCellModelFull(TTCellModel):
 
     @staticmethod
     def run(P="",use_gpu=False, regen=True,name="out.txt"):  
-        
+        print("Running TTCellModelFull with parameters:", P)
         return TTCellModel.run(np.array([TTCellModelFull.cofs(p) for p in P]))
 
 

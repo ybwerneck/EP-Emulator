@@ -31,12 +31,12 @@ factor=1e5/500
 # -----------------------------
 # True model inference times (s) per problem
 true_inference = {
-    "A": 40.05,
-    "B": 40.1061,
-    "C": 56191,
-    "D": 68453,
+    "A": 2*400.05,
+    "B": 2*474.1061,
+    "C": 144899*2,
+    "D": 144899*2,
 }
-true_inference = {k: v*factor for k, v in true_inference.items()}   
+true_inference = {k: v for k, v in true_inference.items()}   
 
 # -----------------------------
 # Load data
@@ -87,10 +87,11 @@ for idx, prob in enumerate(probs):
     )
     present_colors = {m: color_mapping[m] for m in present_models}
     data['Inference Time (s)'] = data['Inference Time (s)'] 
+    data['Speed Up'] = true_inference[prob] / data['Inference Time (s)']
     sns.scatterplot(
         data=data,
         x='Training Time (s)',
-        y='Inference Time (s)',
+        y='Speed Up',
         hue='Model',
         palette=present_colors,
         size='marker_size',
@@ -102,14 +103,6 @@ for idx, prob in enumerate(probs):
         legend=False
     )
 
-    # Add horizontal dashed line for true model inference
-    ax.axhline(
-        y=true_inference[prob],
-        color='black',
-        linestyle='--',
-        linewidth=2,
-        label='True model'
-    )
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -117,7 +110,7 @@ for idx, prob in enumerate(probs):
     ax.tick_params(axis='both', which='major', labelsize=18)
     ax.set_title(prob_labels[prob], fontsize=18)
     ax.set_xlabel('Training time (s)', fontsize=18)
-    ax.set_ylabel('Inference time for 100K sample (s)', fontsize=18)
+    ax.set_ylabel('Speed up', fontsize=18)
     ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.25)
 
 # Remove empty axes

@@ -114,7 +114,7 @@ class ModelInterface:
         if hasattr(self, "x_min") and self.x_min is not None and self.x_max is not None:
             X_norm = self.normalize_x(X)
         else:
-            X_norm = Xsd
+            X_norm = X
 
 
         #print(np.shape(X_norm))

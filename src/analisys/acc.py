@@ -101,8 +101,8 @@ legend_handles = [Patch(color=color_mapping[m], label=m) for m in model_names]
 fig.legend(
     handles=legend_handles,
     title="Emulator",
-    fontsize=18,
-    title_fontsize=18,
+    fontsize=20,
+    title_fontsize=20,
     loc='center right',
     bbox_to_anchor=(0.98, 0.5)
 )
@@ -112,5 +112,5 @@ fig.supxlabel("Problem", fontsize=18)
 fig.suptitle("Surrogate validation accuracy across problems", fontsize=22)
 
 plt.tight_layout()
-plt.subplots_adjust(right=0.82, top=0.92)
+plt.subplots_adjust(right=0.80, top=0.92)
 plt.savefig("Results/plots/mare_overall_surrogates_AB_CD.png", dpi=600, bbox_inches="tight")

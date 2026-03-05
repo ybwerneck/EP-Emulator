@@ -129,7 +129,7 @@ def evaluate_emulator_folder(emulator_folder, true_uq_csv, true_sa_csv, model, u
     # Load true statistics
     true_uq_df = pd.read_csv(true_uq_csv)
     true_sa_df = pd.read_csv(true_sa_csv)
-
+    print(true_uq_df)
     uq_true = {key: true_uq_df[key].values for key in ["mean", "std"]}
     sa_true = {
         "S1": true_sa_df.pivot(index="param", columns="output", values="S1").values,
@@ -157,28 +157,31 @@ def evaluate_emulator_folder(emulator_folder, true_uq_csv, true_sa_csv, model, u
         is_pce = hasattr(emulator, "dist") and hasattr(emulator, "model")
         
         if is_pce:
-            if(emulator.P>2):
-                print(f"Skipping {fname} PCE with order {emulator.P} (too high for SA)")
-                continue
+            
+          #  if(emulator.P>2):
+              #  print(f"Skipping {fname} PCE with order {emulator.P} (too high for SA)")
+              #  continue
             # -----------------------------
             # Entry 1: Use PCE basis
             # -----------------------------
-            start_time = time.time()
-            print(dist)
-            uq_emul = compute_uq_from_pce(emulator,dist)
-            uq_metrics = compare_uq(uq_emul, uq_true)
-            sa_emul = compute_pce_sa_from_basis(emulator,dist)
-            sa_metrics = compare_sa(sa_emul, sa_true)
-            elapsed = time.time() - start_time
+            if(False):
+                start_time = time.time()
+                print(np.shape(uq_true["mean"]))
+                uq_emul = compute_uq_from_pce(emulator,dist)
+                print(np.shape(uq_emul["mean"]))
+                uq_metrics = compare_uq(uq_emul, uq_true)
+                sa_emul = compute_pce_sa_from_basis(emulator,dist)
+                sa_metrics = compare_sa(sa_emul, sa_true)
+                elapsed = time.time() - start_time
 
-            records_emul.append({
-                "model": fname + "_basis",
-                **uq_metrics,
-                **sa_metrics,
-                "uq_time_s": elapsed / 2,  # optional split if you want separate timings
-                "sa_time_s": elapsed / 2,
-            })
-            print(f"{fname} [PCE basis] metrics: {uq_metrics}, {sa_metrics} (time: {elapsed:.2f}s)")
+                records_emul.append({
+                    "model": fname + "_basis",
+                    **uq_metrics,
+                    **sa_metrics,
+                    "uq_time_s": elapsed / 2,  # optional split if you want separate timings
+                    "sa_time_s": elapsed / 2,
+                })
+                print(f"{fname} [PCE basis] metrics: {uq_metrics}, {sa_metrics} (time: {elapsed:.2f}s)")
 
             # -----------------------------
             # Entry 2: Use emulator normally
@@ -203,7 +206,7 @@ def evaluate_emulator_folder(emulator_folder, true_uq_csv, true_sa_csv, model, u
             print(f"{fname} [MC emulator] metrics: {uq_metrics_mc}, {sa_metrics_mc} (time: {elapsed_uq + elapsed_sa:.2f}s)")
 
         else:
-            continue
+            
             # Standard surrogate workflow
             start_uq = time.time()
             uq_emul = compute_uq(model_fn=emulator.predict, dist=dist, n_samples=uq_samples)

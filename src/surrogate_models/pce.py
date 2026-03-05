@@ -65,28 +65,16 @@ class PCEModel(ModelInterface):
         y_hat = np.array([self.model(*pt) for pt in u.T])
 
 
-    def _predict(self, X, **kwargs):
-        """
-        Predict outputs using the trained PCE model.
+    def _predict(self, X, n_proc=32, **kwargs):
+        from multiprocessing import Pool
 
-        Parameters
-        ----------
-        X : array-like, shape (n_samples, n_params)
-            Input samples in physical space.
-
-        Returns
-        -------
-        y_hat : ndarray, shape (n_samples, n_outputs)
-            Numeric predictions.
-        """
         if self.model is None:
             raise ValueError("Model is not trained yet.")
 
         X = np.asarray(X)
-        # Map physical inputs to stochastic space
         u = X.T
 
-        # Evaluate numerically
-        y_hat = np.array([self.model(*pt) for pt in u.T])
+        with Pool(n_proc) as p:
+            y_hat = p.starmap(self.model, u.T)
 
-        return y_hat
+        return np.array(y_hat)

@@ -14,7 +14,7 @@ def klotz(x, a, b):
 
 # -----------------------------------------------------------------------------
 
-def fitmodel(x, p, a0, b0, plot_fit=False, plot_fid=0, plot_label=''):
+def fitmodel(x, p, a0, b0, plot_fit=True, plot_fid=0, plot_label=''):
     """
     Fitting klotz
     """
@@ -28,12 +28,41 @@ def fitmodel(x, p, a0, b0, plot_fit=False, plot_fid=0, plot_label=''):
     params = mod.make_params()
     result = mod.fit(p, params, method="leastsq", x=x)  # fitting
 
-    if(plot_fit):
-        plt.figure(figsize=(8,4))
-        result.plot_fit(datafmt="o")
-        plt.tight_layout()
-        plt.savefig('output/fitting_%s_%03d.png' % (plot_label,plot_fid))
-        #plt.show()
+    if True:
+        fig, ax = plt.subplots(figsize=(4.5, 3.0))
+
+        result.plot_fit(ax=ax, datafmt="o", data_kws={"ms":4})
+
+        # Extract fitted parameters
+        a = result.values["a"]
+        b = result.values["b"]
+        mse = result.chisqr / size
+
+        # Annotate fitted coefficients
+        textstr = (
+            r"$a = %.3g$" "\n"
+            r"$b = %.3g$" "\n"
+        ) % (a, b)
+
+        ax.text(
+            0.05, 0.95, textstr,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            #bbox=dict(boxstyle="round", facecolor="white", alpha=0.8)
+        )
+
+        ax.set_xlabel(f"{plot_label} (normalized)")
+        ax.set_ylabel("p")
+        ax.set_title(f"Klotz Fit - {plot_label} (MSE: {mse:.2e})")
+        ax.tick_params(direction="in")
+
+        fig.tight_layout()
+
+        fig.savefig(f"output/fitting_{plot_label}_{plot_fid:03d}.png", bbox_inches="tight")
+        fig.savefig(f"output/fitting_{plot_label}_{plot_fid:03d}.png", dpi=300, bbox_inches="tight")
+
+        plt.close(fig)
 
     mse = result.chisqr/size
     print("parameters:", result.values)

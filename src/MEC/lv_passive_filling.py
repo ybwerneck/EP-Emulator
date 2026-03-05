@@ -386,12 +386,12 @@ def LVPassiveFilling(geoparams, hoparams, sampleid=0):
     # respostas
 	print("fitting vol")
 	print(vn)
-	result_vol = fitmodel(vn, outpress, 2, 1, plot_fit=True, plot_fid=sampleid, plot_label='vol')
+	result_vol = fitmodel(vn, outpress, 2, 1, plot_fit=True, plot_fid=sampleid, plot_label='Volume')
 
 	print("fitting def")
 	print(outdef_avg)
 	print(outpress)
-	result_def = fitmodel(outdef_avg, outpress, 2, 1, plot_fit=True, plot_fid=sampleid, plot_label='def')
+	result_def = fitmodel(outdef_avg, outpress, 2, 1, plot_fit=True, plot_fid=sampleid, plot_label='Strain')
 	
 	# resultados = [alfa1, beta1, alfa2, beta2, vol, def]
 	res = np.zeros((6))

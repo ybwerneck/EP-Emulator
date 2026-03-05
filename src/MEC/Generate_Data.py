@@ -45,8 +45,8 @@ print(f"Output directory: {output_dir}")
 # Experiment loop
 # ------------------------------------------------------------
 MODELS = [
-    #{"name": "Tiso", "class": TisoModel},
-    {"name": "Ho8",  "class": Ho8Model},
+    {"name": "Tiso", "class": TisoModel},
+   # {"name": "Ho8",  "class": Ho8Model},
 ]
 
 for model_cfg in MODELS:
@@ -66,7 +66,7 @@ for model_cfg in MODELS:
     # Sampling
     # -----------------------------
     start = time.time()
-    dist = model.get_dist(low=c, high=d)
+    dist = model.getDist(low=c, high=d)
     print(dist)
     X = dist.sample(sample_size)
     end = time.time()
@@ -78,7 +78,7 @@ for model_cfg in MODELS:
     # Run model
     # -----------------------------
     start = time.time()
-    Y = model.run_model(X)  # Adjust nproc based on your system
+    Y = model.run(X.T)  # Adjust nproc based on your system
     if Y is not None:
         Y = extract_qois(Y)
         end = time.time()
