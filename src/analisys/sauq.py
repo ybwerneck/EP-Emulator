@@ -8,9 +8,14 @@ from matplotlib.patches import Patch
 # Utilities
 # -----------------------------
 def extract_training_samples(name):
-    part = name.split('_')[-1]          # e.g. "0.1K.pth"
-    k_val = part.replace('K','').replace('.pth','').replace('.pkl','')
-    return int(float(k_val) * 1000)
+    try:
+        part = name.split('_')[-1]
+        k_val = part.replace('K','').replace('.pth','').replace('.pkl','')
+        return int(float(k_val) * 1000)
+    except:
+        part = name.split('_')[-2]
+        k_val = part.replace('K','').replace('.pth','').replace('.pkl','')
+        return int(float(k_val) * 1000)
 
 def get_size(n):
     if n == 100:  return 60
@@ -33,12 +38,21 @@ color_mapping = {model: custom_palette[i] for i, model in enumerate(model_names)
 probs = ["A","B"]
 
 # -----------------------------
+# Custom problem names
+# -----------------------------
+prob_names = {
+    "A": "$A_E$",
+    "B": "$B_E$"
+}
+
+# -----------------------------
 # Load data
 # -----------------------------
 data_dict = {prob: pd.read_csv(f'Results/inference_{prob}.csv') for prob in probs}
 uqsa_dict = {}
 
 for prob in probs:
+
     uqsa_df = pd.read_csv(f'Results/uq_sa_{prob}.csv')
 
     def map_model_name(name):
@@ -54,34 +68,77 @@ for prob in probs:
         return name
 
     def get_subtype(name):
-        if '_mc' in name: return 'mc'
+        if '_mc' in name:
+            return 'mc'
         return 'default'
 
     uqsa_df['Model'] = uqsa_df['model'].apply(map_model_name)
     uqsa_df['subtype'] = uqsa_df['model'].apply(get_subtype)
     uqsa_df['Training Samples'] = uqsa_df['model'].apply(extract_training_samples)
 
-    uqsa_dict[prob] = uqsa_df[['Model','Training Samples','subtype','mean_rel','S1_rel','model']]
+    uqsa_dict[prob] = uqsa_df[['Model','Training Samples','subtype',
+                               'mean_rel','std_rel','S1_rel','ST_rel','model']]
+
     uqsa_dict[prob] = uqsa_dict[prob][~uqsa_dict[prob]['model'].str.contains('basis', na=False)]
 
 # -----------------------------
-# Plot metrics with linear family regressions
+# Metric groups
 # -----------------------------
-for metric_name in ['mean_rel','S1_rel']:
+metric_groups = {
+    'UQ': ['mean_rel','std_rel'],
+    'SA': ['S1_rel','ST_rel']
+}
+# -----------------------------
+# Linear model families
+# -----------------------------
+family_map = {
+    'NN':  ['NN_S','NN_M','NN_L'],
+    'GP':  ['gp_S','gp_M','gp_L'],
+    'PCE': ['PCE_2','PCE_3','PCE_5']
+}
 
-    n_probs = len(probs)
-    cols = 2
-    rows = int(np.ceil(n_probs / cols))
-    fig, axes = plt.subplots(rows, cols, figsize=(16, 6),sharey=False, sharex=True)
-    axes = axes.flatten() if n_probs > 1 else [axes]
+family_colors = {
+    'NN':  sns.color_palette("Blues", 6)[4],
+    'GP':  sns.color_palette("Greens", 6)[4],
+    'PCE': sns.color_palette("Reds", 6)[4]
+}
 
-    for idx, prob in enumerate(probs):
-        ax = axes[idx]
+family_order = {'NN':0, 'GP':1, 'PCE':2}
+
+
+# -----------------------------
+# Plot
+# -----------------------------
+for group_name, metrics in metric_groups.items():
+
+    rows = len(metrics)
+    cols = len(probs)
+
+    fig, axes = plt.subplots(
+        rows,
+        cols,
+        figsize=(8,12),
+        sharex=True,
+        sharey='row'
+    )
+
+    if rows == 1:
+        axes = np.array([axes])
+
+    # Labels for rows (do NOT modify metrics)
+    if group_name == 'UQ':
+        metric_labels = ["MARE of UQ-Mean", "MARE of UQ-Std"]
+    else:
+        metric_labels = ["S1 Error", "ST Error"]
+
+    # ----------------------------------
+    # Loop over problems (columns)
+    # ----------------------------------
+    for j, prob in enumerate(probs):
 
         data = data_dict[prob].copy()
         data['Model'] = data['Model'].astype(str)
 
-        # Pair UQ/SA with (Model, Training Samples)
         merged_df = data.merge(
             uqsa_dict[prob],
             on=['Model', 'Training Samples'],
@@ -90,111 +147,137 @@ for metric_name in ['mean_rel','S1_rel']:
 
         merged_df['size'] = merged_df['Training Samples'].apply(get_size)
 
-        # -----------------------------
-        # Scatter
-        # -----------------------------
-        for _, row in merged_df.iterrows():
-            ax.scatter(
-                x=row['MARE'],
-                y=row[metric_name],
-                s=row['size'],
-                color=color_mapping[row['Model']],
-                edgecolor='black',
-                alpha=0.8,
-                zorder=3
-            )
+        # ----------------------------------
+        # Loop over metrics (rows)
+        # ----------------------------------
+        for i, metric_name in enumerate(metrics):
 
-        # -----------------------------
-        # Broad-family linear regressions
-        # -----------------------------
-        family_map = {
-            'NN':  ['NN_S','NN_M','NN_L'],
-            'GP':  ['gp_S','gp_M','gp_L'],
-            'PCE': ['PCE_2','PCE_3','PCE_5']
-        }
+            ax = axes[i, j]
 
-        family_colors = {
-            'NN':  sns.color_palette("Blues", 6)[4],
-            'GP':  sns.color_palette("Greens", 6)[4],
-            'PCE': sns.color_palette("Reds", 6)[4]
-        }
+            # -----------------------------
+            # Scatter
+            # -----------------------------
+            for _, row in merged_df.iterrows():
 
-        for family, models in family_map.items():
+                ax.scatter(
+                    x=row['MARE'],
+                    y=row[metric_name],
+                    s=row['size'],
+                    color=color_mapping[row['Model']],
+                    edgecolor='black',
+                    alpha=0.8,
+                    zorder=3
+                )
 
-            sub = merged_df[merged_df['Model'].isin(models)].dropna(subset=['MARE', metric_name])
+            # -----------------------------
+            # Linear regression families
+            # -----------------------------
+            for family, models in family_map.items():
 
-            if len(sub) < 2:
-                continue
+                sub = merged_df[
+                    merged_df['Model'].isin(models)
+                ].dropna(subset=['MARE', metric_name])
 
-            x = sub['MARE'].values
-            y = sub[metric_name].values
+                if len(sub) < 2:
+                    continue
 
-            # linear regression y = a x + b
-            a, b = np.polyfit(x, y, 1)
+                x = sub['MARE'].values
+                y = sub[metric_name].values
 
-            x_line = np.linspace(x.min(), x.max(), 200)
-            y_line = a * x_line + b
+                a, b = np.polyfit(x, y, 1)
 
-            ax.plot(
-                x_line, y_line,
-                color=family_colors[family],
-                linewidth=3,
-                alpha=0.75,
-                zorder=0
-            )
+                x_line = np.linspace(x.min(), x.max(), 200)
+                y_line = a * x_line + b
 
-            # annotation
-            xm = np.mean(x)
-            ym = a * xm + b
+                ax.plot(
+                    x_line,
+                    y_line,
+                    color=family_colors[family],
+                    linewidth=3,
+                    alpha=0.75
+                )
 
-            ax.text(
-                xm, ym,
-                f"{family}:{a:.1f}x + {b:.3f}",
-                fontsize=18,
-                color=family_colors[family],
-                ha='left',
-                va='bottom'
-            )
+                ypos = 0.01 + 0.06 * family_order[family]
+
+                ax.text(
+                    0.25,
+                    ypos,
+                    f"{family}: {a:.1f}x + {b:.2f}",
+                    transform=ax.transAxes,
+                    fontsize=14,
+                    color=family_colors[family],
+                    ha='left',
+                    va='bottom'
+                )
+
             ax.set_xscale('log')
             ax.set_yscale('log')
 
-        # -----------------------------
-        # Axes formatting
-        # -----------------------------
-        ax.set_xlabel('MARE', fontsize=18)
-        ylabel = 'UQ Error' if metric_name=='mean_rel' else 'S1 Relative Error'
-        ax.set_xlabel('MARE', fontsize=18)
+            ax.grid(
+                True,
+                linestyle="--",
+                linewidth=0.5,
+                alpha=0.25
+            )
 
-        if idx % cols == 0:   # only left subplot gets y-label
-            ylabel = 'UQ Error' if metric_name=='mean_rel' else 'S1 Relative Error'
-            ax.set_ylabel(ylabel, fontsize=18)
-        else:
-            ax.set_ylabel('')
+    # -----------------------------
+    # Column titles = Problems
+    # -----------------------------
+    for j, prob in enumerate(probs):
 
+        axes[0, j].set_title(
+            f"Problem {prob_names[prob]}",
+            fontsize=18
+        )
 
+    # -----------------------------
+    # Row labels = Metrics
+    # -----------------------------
+    for i in range(rows):
 
-        ax.set_title(f'Problem {prob}', fontsize=18)
-        ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.25)
+        axes[i, 0].set_ylabel(
+            metric_labels[i],
+            fontsize=16
+        )
 
-    # Remove empty axes
-    for j in range(idx+1, len(axes)):
-        fig.delaxes(axes[j])
+    # -----------------------------
+    # X labels
+    # -----------------------------
+    for j in range(cols):
+
+        axes[-1, j].set_xlabel(
+            "Validation MARE",
+            fontsize=16
+        )
 
     # -----------------------------
     # Legend
     # -----------------------------
-    color_handles = [Patch(color=color_mapping[m], label=m) for m in model_names]
-    plt.subplots_adjust(wspace=0.03, hspace=0.01)
+    color_handles = [
+        Patch(color=color_mapping[m], label=m)
+        for m in model_names
+    ]
 
     fig.legend(
         handles=color_handles,
         title='Model',
-        fontsize=18,
-        title_fontsize=18,
+        fontsize=16,
+        title_fontsize=16,
         loc='center left',
         bbox_to_anchor=(0.99, 0.5)
     )
 
+    plt.subplots_adjust(
+        wspace=0.05,
+        hspace=0.08
+    )
+
     plt.tight_layout()
-    plt.savefig(f'Results/plots/{metric_name}_family_linear_scatter.png', dpi=600, bbox_inches='tight')
+
+    plt.savefig(
+        f'Results/plots/{group_name}_family_linear_scatter.png',
+        dpi=600,
+        bbox_inches='tight'
+    )
+
     plt.close(fig)

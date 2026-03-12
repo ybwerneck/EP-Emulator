@@ -12,7 +12,8 @@ from src.EP.ModelC import TTCellModelFull as modelC
 
 # -------------------------------
 # Simulation configuration
-phase=1000
+
+phase = 20000
 ti, tf, dt, dtS = phase+000, phase+400, 0.01, 0.01
 n = 256
 use_gpu = True
@@ -20,33 +21,62 @@ use_gpu = True
 
 # -------------------------------
 # Plotting function
-labels=["APD30", "APD50", "APD80"]
-import numpy as np
-import matplotlib.colors as mcolors
 
 def plot_with_shades_and_apd(ax, time_points, waveforms, apds, label, color,
-                             alpha=0.25, n_representative=5):
+                             alpha_outer=0.20, alpha_inner=0.35,
+                             n_representative=5):
 
     waveforms = np.array(waveforms)
+    apds = np.array(apds)
 
-    min_waveform = np.min(waveforms, axis=0)
-    max_waveform = np.max(waveforms, axis=0)
-    mean_waveform = np.mean(waveforms, axis=0)
-
-    time_points = time_points[:len(mean_waveform)]
-    time_points=[t-phase for t in time_points]
     # -------------------------------
-    # Uncertainty band
+    # Waveform percentiles
+
+    p5  = np.percentile(waveforms, 10, axis=0)
+    p25 = np.percentile(waveforms, 30, axis=0)
+    p50 = np.percentile(waveforms, 50, axis=0)
+    p75 = np.percentile(waveforms, 70, axis=0)
+    p95 = np.percentile(waveforms, 90, axis=0)
+
+    time_points = time_points[:len(p50)]
+    time_points = [t - phase for t in time_points]
+
+    # -------------------------------
+    # Outer uncertainty band (10–90)
+
     ax.fill_between(
         time_points,
-        min_waveform,
-        max_waveform,
+        p5,
+        p95,
         color=color,
-        alpha=alpha
+        alpha=alpha_outer
     )
 
     # -------------------------------
-    # faint representative trajectories
+    # Inner uncertainty band (30–70)
+
+    ax.fill_between(
+        time_points,
+        p25,
+        p75,
+        color=color,
+        alpha=alpha_inner
+    )
+
+    # -------------------------------
+    # Select samples inside the outer band
+
+    inside_band = np.all((waveforms >= p5) & (waveforms <= p95), axis=1)
+
+    waveforms_band = waveforms[inside_band]
+    apds_band = apds[inside_band]
+
+    if len(apds_band) == 0:
+        apds_band = apds
+
+    # -------------------------------
+    # Representative trajectories
+
     idxs = np.random.choice(
         len(waveforms),
         size=min(n_representative, len(waveforms)),
@@ -59,12 +89,13 @@ def plot_with_shades_and_apd(ax, time_points, waveforms, apds, label, color,
             waveforms[i],
             color=color,
             lw=0.4,
-            alpha=0.4
+            alpha=0.35
         )
 
     # -------------------------------
-    # choose representative trajectory
-    dist = np.linalg.norm(waveforms - mean_waveform, axis=1)
+    # Trajectory closest to the median
+
+    dist = np.linalg.norm(waveforms - p50, axis=1)
     rep_idx = np.argmin(dist)
 
     rep_waveform = waveforms[rep_idx]
@@ -78,23 +109,26 @@ def plot_with_shades_and_apd(ax, time_points, waveforms, apds, label, color,
     )
 
     # -------------------------------
-    # APD markers for representative trajectory
-
-    apds = np.array(apds)
-
-    if apds.ndim == 1:
-        apds = apds[:, None]
+    # APDs for the representative trajectory
 
     rep_apds = apds[rep_idx]
 
     labels = ["APD30", "APD50", "APD80"][:len(rep_apds)]
 
     base = np.array(mcolors.to_rgb(color))
-    factors = np.linspace(0.7, 1.2, len(rep_apds))
-    colors = [np.clip(base * f, 0, 1) for f in factors]
-    # compute global APD ranges
-    apd_min = np.min(apds, axis=0)
-    apd_max = np.max(apds, axis=0)
+    def scale_color(base, factor):
+        base = np.array(base)
+        if factor < 1:
+            return base * factor
+        else:
+            return base + (1 - base) * (factor - 1)
+
+    factors = [0.4, 1.0, 1.4]
+    colors = [scale_color(base, f) for f in factors]
+
+    # APD bounds computed only from the outer band
+    apd_min = np.min(apds_band, axis=0)
+    apd_max = np.max(apds_band, axis=0)
 
     for i, apd_time in enumerate(rep_apds):
 
@@ -102,7 +136,6 @@ def plot_with_shades_and_apd(ax, time_points, waveforms, apds, label, color,
 
         y = np.interp(apd_time, time_points, rep_waveform)
 
-        # representative APD point
         ax.scatter(
             apd_time,
             y,
@@ -112,70 +145,41 @@ def plot_with_shades_and_apd(ax, time_points, waveforms, apds, label, color,
             label=f"{labels[i]}"
         )
 
-        # small horizontal error bar showing range
         ax.errorbar(
             apd_time,
             y,
             xerr=[[apd_time - apd_min[i]], [apd_max[i] - apd_time]],
             fmt="none",
-            ecolor=c,
+            ecolor="black",
             elinewidth=1,
             capsize=3,
             alpha=0.9
         )
 
-            # -------------------------------
-    # Additional QoIs for representative trajectory
+    # -------------------------------
+    # Additional QoIs
 
-    # V_rest (first value)
     v_rest = rep_waveform[0]
     t_rest = time_points[0]
 
-    # V_peak
     peak_idx = np.argmax(rep_waveform)
     v_peak = rep_waveform[peak_idx]
     t_peak = time_points[peak_idx]
 
-    # dV/dt max
     dv = np.gradient(rep_waveform, time_points)
     dv_idx = np.argmax(dv)
 
-    dv_max = dv[dv_idx]
     t_dv = time_points[dv_idx]
     v_dv = rep_waveform[dv_idx]
 
-    # plot V_rest
-    ax.scatter(
-        t_rest,
-        v_rest,
-        marker="s",
-        color="black",
-        s=40,
-        label=f"V_rest"
-    )
+    ax.scatter(t_rest, v_rest, marker="s", color="black", s=40, label="V_rest")
+    ax.scatter(t_peak, v_peak, marker="s", color="black", s=40, label="V_peak")
+    ax.scatter(t_dv, v_dv, marker="D", color="red", s=45, label="Max dV/dt")
 
-    # plot V_peak
-    ax.scatter(
-        t_peak,
-        v_peak,
-        marker="s",
-        color="black",
-        s=40,
-        label=f"V_peak"
-    )
 
-    # plot dV/dt max
-    ax.scatter(
-        t_dv,
-        v_dv,
-        marker="D",
-        color="red",
-        s=45,
-        label=f"dV/dt max"
-    )
-    
 # -------------------------------
 # Create figure
+
 fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
 
 
@@ -207,7 +211,7 @@ plot_with_shades_and_apd(
 )
 
 axes[0].set_title("EP_A (Ischemic Model)", fontsize=16)
-axes[0].set_ylabel("Voltage (mV)", fontsize=14)
+axes[0].set_ylabel("Membrane Potential (mV)", fontsize=14)
 
 
 # =====================================================
@@ -228,8 +232,6 @@ waveformsC = [res['Wf'] for res in resultsC]
 
 apdsC = [tuple([res['APD30'], res['APD50'], res['APD80']]) for res in resultsC]
 
-print(apdsC)
-
 plot_with_shades_and_apd(
     axes[1],
     tpC,
@@ -243,7 +245,7 @@ axes[1].set_title("EP_B (Fully Parameterized Model)", fontsize=16)
 
 
 # -------------------------------
-# Final styling
+# Final plot style
 
 for ax in axes:
     ax.set_xlabel("Time (ms)", fontsize=14)
@@ -257,5 +259,3 @@ plt.savefig(
     dpi=300,
     bbox_inches="tight"
 )
-
-plt.show()

@@ -27,8 +27,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 from src.EP.ModelC import TTCellModelFull as modelB
 from src.EP.ModelA import TTCellModelExt as modelA
-from src.MEC.ModelsCD import TisoModel as modelC
-from src.MEC.ModelsCD import Ho8Model as modelD
+
 from src.EP.wrapper import FullModelWrapper
 from src.surrogate_models.gaussian_process import *
 from src.surrogate_models.DD_Models import ModelInterface as Surrogate
@@ -37,7 +36,7 @@ from src.surrogate_models.DD_Models import ModelInterface as Surrogate
 # MODEL REGISTRY (distribution only)
 # ---------------------------------------------------------------------
 def load_model(model_key):
-    MODEL_REGISTRY = {"a": modelA, "b": modelB, "h": modelC, "t": modelD}
+    MODEL_REGISTRY = {"a": modelA, "b": modelB}
     if model_key not in MODEL_REGISTRY:
         raise ValueError(f"Unknown model '{model_key}'. Valid options: {list(MODEL_REGISTRY.keys())}")
     if model_key in ["a", "b"]:
@@ -117,8 +116,15 @@ def compute_pce_sa_from_basis(surrogate,dist):
 
 def compare_sa(sa_emul, sa_true, eps=1e-12):
     """Relative L2 norm of SA indices."""
+    
     rel = lambda emul, true: np.linalg.norm(emul - true) / (np.linalg.norm(true) + eps)
-    return {"S1_rel": rel(sa_emul["S1"], sa_true["S1"])}
+
+    metrics = {
+        "S1_rel": rel(sa_emul["S1"], sa_true["S1"]),
+        "ST_rel": rel(sa_emul["ST"], sa_true["ST"]),
+    }
+
+    return metrics
 
 # ---------------------------------------------------------------------
 # MAIN EVALUATION ROUTINE
@@ -156,7 +162,7 @@ def evaluate_emulator_folder(emulator_folder, true_uq_csv, true_sa_csv, model, u
         # Check if emulator is a PCE
         is_pce = hasattr(emulator, "dist") and hasattr(emulator, "model")
         
-        if is_pce:
+        if False:
             
           #  if(emulator.P>2):
               #  print(f"Skipping {fname} PCE with order {emulator.P} (too high for SA)")

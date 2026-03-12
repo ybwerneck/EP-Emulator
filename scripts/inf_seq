@@ -11,9 +11,9 @@ conda activate fenics-ompi
 # -------------------------------------------------
 # Global parameters (edit here)
 # -------------------------------------------------
-MODELS=("A" "B" "T" "H")
+MODELS=("C")
 
-BASE_DATA="data/Generated_Data_0.1K"
+BASE_DATA="data/Generated_Data_5K"
 BASE_MODELS="trainned_models"
 BASE_OUTPUT="Results/"
 

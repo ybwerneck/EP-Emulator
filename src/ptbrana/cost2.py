@@ -1,0 +1,166 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+from matplotlib.patches import Patch
+
+# -----------------------------
+# Paleta de cores
+# -----------------------------
+blue_colors  = sns.color_palette("Blues", 6)[3:]
+green_colors = sns.color_palette("Greens", 3)[:]
+reds_colors  = sns.color_palette("Reds", 6)[3:]
+custom_palette = blue_colors + green_colors + reds_colors 
+
+model_names = ["NN_S", "NN_M", "NN_L", "gp_S", "gp_M", "gp_L", "PCE_2", "PCE_3", "PCE_5"]
+color_mapping = {model: custom_palette[i] for i, model in enumerate(model_names)}
+
+# -----------------------------
+# Problemas
+# -----------------------------
+probs = ["A", "B", "C", "D"]
+
+# Mapear códigos dos problemas para nomes em LaTeX
+prob_labels = {
+    "A": r"$A_E$",
+    "B": r"$B_E$",
+    "C": r"$A_M$",
+    "D": r"$B_M$"
+}
+
+factor = 1e5 / 500
+
+# -----------------------------
+# Tempos de inferência do modelo verdadeiro (s) por problema
+# -----------------------------
+true_inference = {
+    "A": 2*400.05,
+    "B": 2*474.1061,
+    "C": 144899*2,
+    "D": 144899*2,
+}
+true_inference = {k: v for k, v in true_inference.items()}
+
+# -----------------------------
+# Carregar dados
+# -----------------------------
+data_dict = {prob: pd.read_csv(f'Results/inference_{prob}.csv') for prob in probs}
+
+# -----------------------------
+# Mapeamento do tamanho do marcador (tamanho do conjunto de treino)
+# -----------------------------
+size_map = {
+    100: 60,
+    200: 120,
+    500: 200,
+    1000: 350
+}
+
+# -----------------------------
+# Layout
+# -----------------------------
+n_probs = len(probs)
+cols = 2
+rows = int(np.ceil(n_probs / cols))
+fig, axes = plt.subplots(
+    rows, cols,
+    figsize=(12, 4 * rows),
+    sharex='col',
+    sharey='row'
+)
+axes = axes.flatten() if n_probs > 1 else [axes]
+
+# -----------------------------
+# Plotar cada problema
+# -----------------------------
+for idx, prob in enumerate(probs):
+    ax = axes[idx]
+    data = data_dict[prob].copy()
+    data['Model'] = data['Model'].astype(str)
+
+    # Mapear tamanhos dos marcadores
+    if 'Training Samples' in data.columns:
+        data['marker_size'] = data['Training Samples'].map(size_map) * 2
+    else:
+        data['marker_size'] = 150
+
+    present_models = sorted(
+        data['Model'].unique(),
+        key=lambda x: model_names.index(x)
+    )
+    present_colors = {m: color_mapping[m] for m in present_models}
+
+    data['Inference Time (s)'] = data['Inference Time (s)']
+    data['Speed Up'] = true_inference[prob] / data['Inference Time (s)']
+
+    sns.scatterplot(
+        data=data,
+        x='Training Time (s)',
+        y='Speed Up',
+        hue='Model',
+        palette=present_colors,
+        size='marker_size',
+        sizes=(60, 350),
+        alpha=0.80,
+        edgecolor='black',
+        linewidth=0.3,
+        ax=ax,
+        legend=False
+    )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    ax.tick_params(axis='both', which='major', labelsize=18)
+    ax.set_xlabel('Tempo de treino (s)', fontsize=18)
+    ax.set_ylabel('Aceleração (speed up)', fontsize=18)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.25)
+
+# Remover eixos vazios
+for j in range(idx + 1, len(axes)):
+    fig.delaxes(axes[j])
+
+
+axes[0].set_title(prob_labels["A"], fontsize=18)
+axes[1].set_title(prob_labels["B"], fontsize=18)
+    
+
+fig.suptitle("Escalonamento do tempo de treino e inferência", fontsize=22)
+
+# -----------------------------
+# Legendas
+# -----------------------------
+
+# Legenda dos modelos
+model_handles = [Patch(color=color_mapping[m], label=m) for m in model_names]
+
+fig.legend(
+    handles=model_handles,
+    title="Modelo substituto",
+    fontsize=14,
+    title_fontsize=14,
+    loc='center left',
+    bbox_to_anchor=(0.98, 0.65)
+)
+
+# Legenda do tamanho do conjunto de treino
+size_handles = [
+    plt.scatter([], [], s=size_map[s], edgecolors='black', facecolors='gray', alpha=0.6, label=f'{s}')
+    for s in size_map
+]
+
+fig.legend(
+    handles=size_handles,
+    title='Tamanho do conjunto',
+    fontsize=14,
+    title_fontsize=14,
+    loc='center left',
+    bbox_to_anchor=(0.98, 0.25)
+)
+
+# -----------------------------
+# Salvar figura
+# -----------------------------
+plt.tight_layout()
+plt.savefig('Results/plots/compute_training_inference_scaling.png', dpi=600, bbox_inches='tight')
+# plt.show()

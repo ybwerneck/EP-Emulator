@@ -80,7 +80,8 @@ def plot_avg_param_y_error(runs, save_path):
     colors = sns.color_palette("Set1", len(runs))
 
     for i, run in enumerate(runs):
-
+        print(runs)
+        print(dasd)
         # -----------------------------
         # Avg param error
         # -----------------------------
@@ -108,7 +109,7 @@ def plot_avg_param_y_error(runs, save_path):
         y_err = run["y_error"]  # (it, batch, pop, n_outputs)
         if y_err is not None:
             mean_over_outputs = y_err.mean(axis=3)       # (it, batch, pop)
-            min_over_pop = np.min(mean_over_outputs, axis=2)  # (it, batch)
+            min_over_pop = np.mean(mean_over_outputs, axis=2)  # (it, batch)
             avg_best_per_sample = min_over_pop.mean(axis=1)
             q1 = np.quantile(min_over_pop, 0.25, axis=1)
             q2 = np.quantile(min_over_pop, 0.50, axis=1)
@@ -147,7 +148,7 @@ param_names = [
 def plot_three_params(runs, save_path, param_indices=None):
     """Figure 2: three subplots for selected parameters (best per sample, Q1–Q3)"""
     n_params = runs[0]["param_error"].shape[3]  # total number of params
-    param_indices=[0,2]
+    param_indices=[7,2]
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 8), sharey=True)
     colors = sns.color_palette("Set1", len(runs))

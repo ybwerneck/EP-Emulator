@@ -12,51 +12,43 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 def gradient_refine(emulator, P_init, Y_target, dist=None,
                     lr=0.02, num_steps=20, lambda_prior=0.0,
                     P_min=0.75, P_max=1.25, device="cuda"):
-    """
-    Quick gradient refinement for a candidate P_init.
 
-    Returns:
-        refined_P: numpy array
-        best_loss: float
-    """
     import torch
-    import torch.nn.functional as F
-    import numpy as np
 
     device = torch.device(device)
+
     P = torch.tensor(P_init[None, :], dtype=torch.float32, device=device, requires_grad=True)
     Y_t = torch.tensor(Y_target[None, :], dtype=torch.float32, device=device)
 
+    qoi_scale = torch.abs(Y_t) + 1e-8
+
     optimizer = torch.optim.Adam([P], lr=lr)
 
-    best_loss = float('inf')
+    best_loss = float("inf")
     best_P = P.clone().detach()
 
     for _ in range(num_steps):
+
         optimizer.zero_grad()
 
-        # Forward pass
         Q_pred = emulator.forward(P)
 
-        # Smooth L1 loss for better stability with few steps
-        loss_data = F.smooth_l1_loss(Q_pred, Y_t)
+        loss_data = torch.mean(((Q_pred - Y_t) / qoi_scale) ** 2)
 
-        # Optional prior
         loss_prior = 0.0
-        if dist is not None and lambda_prior > 0:
+        if False and dist is not None and lambda_prior > 0:
             pdf_vals = dist.pdf(P.detach().cpu().numpy()) + 1e-12
             loss_prior = -np.log(pdf_vals).mean()
             loss_prior = torch.tensor(loss_prior, dtype=torch.float32, device=device)
 
         loss = loss_data + lambda_prior * loss_prior
+
         loss.backward()
         optimizer.step()
 
-        # Clamp parameters
         with torch.no_grad():
             P[:] = P.clamp(P_min, P_max)
 
-        # Track best
         if loss.item() < best_loss:
             best_loss = loss.item()
             best_P = P.clone().detach()
@@ -69,7 +61,6 @@ def gradient_refine(emulator, P_init, Y_target, dist=None,
 # ============================================================
 
 def run_emulator(P, emulator):
-    """Evaluate emulator on parameter matrix P (N x n_params)."""
     return emulator.predict(P)
 
 
@@ -79,30 +70,25 @@ def prior_loss(P, dist):
 
 
 def pick_three(pop_size):
-    r1, r2, r3 = np.zeros(pop_size,int), np.zeros(pop_size,int), np.zeros(pop_size,int)
+
+    r1 = np.zeros(pop_size, int)
+    r2 = np.zeros(pop_size, int)
+    r3 = np.zeros(pop_size, int)
+
     for j in range(pop_size):
         choices = np.arange(pop_size)
         choices = choices[choices != j]
         sel = np.random.choice(choices, 3, replace=False)
         r1[j], r2[j], r3[j] = sel
+
     return r1, r2, r3
 
 
 def compute_param_error(P, X_true):
-    """
-    P: (batch, pop, n_params)
-    X_true: (batch, n_params)
-    returns: (batch, pop, n_params)
-    """
     return np.abs(P - X_true[:, None, :])
 
 
 def compute_y_error(Y_pred, Y_true):
-    """
-    Y_pred: (batch, pop, n_outputs)
-    Y_true: (batch, n_outputs)
-    returns: (batch, pop, n_outputs)
-    """
     return np.abs(Y_pred - Y_true[:, None, :]) / (np.abs(Y_true[:, None, :]) + 1e-12)
 
 
@@ -124,6 +110,7 @@ def inverse_problem_DE(emulator, X, Y, dist,
     # --------------------------------------------------------
     # Batch selection
     # --------------------------------------------------------
+
     indices = np.random.choice(len(X), batch_size, replace=False) if indices is None else indices
     X_true, Y_true = X[indices], Y[indices]
 
@@ -132,25 +119,34 @@ def inverse_problem_DE(emulator, X, Y, dist,
 
     print("Selected batch indices:", indices)
 
+    np.save(os.path.join(results_dir, "X_true.npy"), X_true)
+    np.save(os.path.join(results_dir, "Y_true.npy"), Y_true)
+    np.save(os.path.join(results_dir, "indices.npy"), indices)
+
+    # QoI normalization scale
+    Y_scale = np.abs(Y_true) + 1e-12
+
     # --------------------------------------------------------
     # Population initialization
     # --------------------------------------------------------
+
     np.random.seed(42)
 
     P_candidates = np.array([
         dist.sample(pop_size, rule="latin_hypercube").T
         for _ in range(batch_size)
-    ])  # (batch, pop, n_params)
+    ])
 
     P_best = P_candidates.copy()
     best_loss = np.full((batch_size, pop_size), np.inf)
 
     # --------------------------------------------------------
-    # Instrumentation storage (FULL)
+    # Instrumentation storage
     # --------------------------------------------------------
-    param_error_hist = []   # (it, batch, pop, n_params)
-    y_error_hist = []       # (it, batch, pop, n_outputs)
-    loss_hist = []          # (it, batch, pop)
+
+    param_error_hist = []
+    y_error_hist = []
+    loss_hist = []
 
     history_best = []
     history_median = []
@@ -161,26 +157,34 @@ def inverse_problem_DE(emulator, X, Y, dist,
     # --------------------------------------------------------
     # Initial evaluation
     # --------------------------------------------------------
+
     P_flat = P_candidates.reshape(batch_size * pop_size, n_params)
     Y_pred_all = run_emulator(P_flat, emulator)
 
     for i in range(batch_size):
+
         start, end = i * pop_size, (i+1) * pop_size
         preds = Y_pred_all[start:end]
-        mse = np.mean((preds - Y_true[i])**2, axis=1)
+
+        mse = np.mean(((preds - Y_true[i]) / Y_scale[i])**2, axis=1)
+
         best_loss[i] = mse
 
     # --------------------------------------------------------
     # Evolution loop
     # --------------------------------------------------------
+
     for it in range(num_iters):
+
         t_iter = time.time()
 
         r1, r2, r3 = pick_three(pop_size)
+
         a, b, c = P_candidates[:, r1, :], P_candidates[:, r2, :], P_candidates[:, r3, :]
         mutants = a + F * (b - c)
 
         cross = np.random.rand(batch_size, pop_size, n_params) < CR
+
         P_trial = np.where(cross, mutants, P_candidates)
         P_trial = np.clip(P_trial, P_min, P_max)
 
@@ -188,105 +192,102 @@ def inverse_problem_DE(emulator, X, Y, dist,
         Y_pred_all = run_emulator(P_flat, emulator)
 
         for i in range(batch_size):
+
             start, end = i * pop_size, (i+1) * pop_size
             preds = Y_pred_all[start:end]
-            mse = np.mean((preds - Y_true[i])**2, axis=1)
 
-            prior_reg = np.abs(prior_weight * prior_loss(P_trial[i], dist))
+            mse = np.mean(((preds - Y_true[i]) / Y_scale[i])**2, axis=1)
+
+            prior_reg = prior_weight * prior_loss(P_trial[i], dist)
+
             total = mse + prior_reg
 
             replace = total < best_loss[i]
+
             best_loss[i, replace] = total[replace]
             P_best[i, replace] = P_trial[i, replace]
 
         P_candidates = P_best.copy()
 
-   
         # ----------------------------------------------------
-        # Gradient refinement (optional)
+        # Gradient refinement
         # ----------------------------------------------------
-        if grad_refine and (it+1) % 1 == 0:
+
+        if grad_refine and (it+1) % 2 == 0:
+
             for i in range(batch_size):
-                j_best = np.argmin(best_loss[i])
-                P_start = P_best[i, j_best].copy()
-                Y_t = Y_true[i]
 
-                P_refined, loss_ref = gradient_refine(
-                    emulator, P_start, Y_t, dist,
-                    lr=1e-4, num_steps=5, lambda_prior=0,
-                    P_min=P_min, P_max=P_max
-                )
+                k_best = max(1, int(0.05 * pop_size))
+                k_rand = max(1, int(0.10 * pop_size))
 
-                print(np.mean(loss_ref<best_loss[i, j_best]), f"Refinement improved loss: {best_loss[i, j_best]:.6e} -> {loss_ref:.6e}")
-                if loss_ref < best_loss[i, j_best]:
-                    P_best[i, j_best] = P_refined
-                    best_loss[i, j_best] = loss_ref
-            print(f"Iter {it+1}/{num_iters} after refinement | Best loss {best_loss.min():.6e}")
+                best_inds = np.argsort(best_loss[i])[:k_best]
+
+                remaining = np.setdiff1d(np.arange(pop_size), best_inds)
+                rand_inds = np.random.choice(remaining, k_rand, replace=False)
+
+                inds = np.concatenate([best_inds, rand_inds])
+
+                for j in inds:
+
+                    P_start = P_best[i, j].copy()
+                    Y_t = Y_true[i]
+
+                    loss_before = best_loss[i, j]
+
+                    P_refined, loss_ref = gradient_refine(
+                        emulator,
+                        P_start,
+                        Y_t,
+                        dist,
+                        lr=1e-5,
+                        num_steps=25,
+                        lambda_prior=0,
+                        P_min=P_min,
+                        P_max=P_max
+                    )
+
+                    if loss_ref < loss_before:
+
+                        P_best[i, j] = P_refined
+                        best_loss[i, j] = loss_ref
+
         # ----------------------------------------------------
-        # Checkpoint logging
+        # Logging
         # ----------------------------------------------------
+
+        history_best.append(best_loss.min())
+        history_median.append(np.median(best_loss))
+
+        param_err = compute_param_error(P_best, X_true)
+        param_error_hist.append(param_err.copy())
+
+        P_flat = P_best.reshape(batch_size * pop_size, n_params)
+        Y_pred_all = run_emulator(P_flat, emulator)
+
+        Y_pred_all = Y_pred_all.reshape(batch_size, pop_size, n_outputs)
+
+        y_err = compute_y_error(Y_pred_all, Y_true)
+        y_error_hist.append(y_err.copy())
+
+        loss_hist.append(best_loss.copy())
+
+        # ----------------------------------------------------
+        # Checkpoints
+        # ----------------------------------------------------
+
         if (it+1) % checkpoint_interval == 0 or (it+1) == num_iters:
-
-                    # ----------------------------------------------------
-            # Full instrumentation
-            # ----------------------------------------------------
-            # Parameter errors
-            param_err = compute_param_error(P_best, X_true)
-            param_error_hist.append(param_err.copy())
-
-            # Y errors
-            P_flat = P_best.reshape(batch_size * pop_size, n_params)
-            Y_pred_all = run_emulator(P_flat, emulator)
-            Y_pred_all = Y_pred_all.reshape(batch_size, pop_size, n_outputs)
-
-            y_err = compute_y_error(Y_pred_all, Y_true)
-            y_error_hist.append(y_err.copy())
-
-            # Loss
-            loss_hist.append(best_loss.copy())
-
-            # Scalars
-            history_best.append(best_loss.min())
-            history_median.append(np.median(best_loss))
 
             iter_times.append(time.time() - t_iter)
 
             mean_time = np.mean(iter_times[-checkpoint_interval:])
+
             print(f"Iter {it+1}/{num_iters} | Best loss {history_best[-1]:.6e} | mean iter time {mean_time:.3f}s")
 
-            # Convergence plot
-            plt.figure()
-            plt.plot(history_best, label="Best")
-            plt.plot(history_median, label="Median")
-            plt.yscale("log")
-            plt.xlabel("Iteration")
-            plt.ylabel("Loss")
-            plt.legend()
-            plt.title("Convergence")
-            plt.savefig(os.path.join(results_dir, "convergence.png"), dpi=200)
-            plt.close()
-
-            # ========================================================
-            # Save full scientific instrumentation
-            # ========================================================
-
-            np.save(os.path.join(results_dir, "param_error_full.npy"),
-                    np.array(param_error_hist))
-            #print(param_error_hist[-1])  # shape: (batch, pop, n_params)
-            # shape: (iters, batch, pop, n_params)
-
-            np.save(os.path.join(results_dir, "y_error_full.npy"),
-                    np.array(y_error_hist))
-            # shape: (iters, batch, pop, n_outputs)
-
-            np.save(os.path.join(results_dir, "loss_full.npy"),
-                    np.array(loss_hist))
-            # shape: (iters, batch, pop)
+            np.save(os.path.join(results_dir, "param_error_full.npy"), np.array(param_error_hist))
+            np.save(os.path.join(results_dir, "y_error_full.npy"), np.array(y_error_hist))
+            np.save(os.path.join(results_dir, "loss_full.npy"), np.array(loss_hist))
 
             np.save(os.path.join(results_dir, "P_best_final.npy"), P_best)
-            np.save(os.path.join(results_dir, "X_true.npy"), X_true)
-            np.save(os.path.join(results_dir, "Y_true.npy"), Y_true)
-            np.save(os.path.join(results_dir, "indices.npy"), indices)
 
             summary = {
                 "total_runtime_sec": float(time.time() - t0),
