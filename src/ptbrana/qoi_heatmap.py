@@ -11,10 +11,10 @@ probs = ["A", "B"]
 
 # Custom problem names
 problem_names = {
-    "A": "Problem E_A",
-    "B": "Problem E_B",
-    "C": "Problem M_A",
-    "D": "Problem M_B"
+    "A": "Problem A_E",
+    "B": "Problem B_E",
+    "C": "Problem A_M",
+    "D": "Problem B_M"
 }
 
 # QoI columns in CSV
@@ -65,10 +65,11 @@ data_dict = {
 def convert_set_size(set_str):
     return float(set_str)
 
+print(props)
 # -------------------------------
 # Plot heatmaps
 for prob in probs:
-
+    print(probs)
     df = data_dict[prob]
 
     # Map model names
@@ -101,7 +102,7 @@ for prob in probs:
         heatmap_df,
         cmap="RdBu_r",  # blue → red
         norm=colors.LogNorm(vmin=1e-5, vmax=1),
-        linewidths=0.7,
+        linewidths=0.9,
         linecolor="black",
         annot=True,
         fmt=".1e",
@@ -119,7 +120,8 @@ for prob in probs:
 
     plt.tight_layout()
 
-    plt.savefig(f"Results/heatmap_qoi_errors_{prob}.png", dpi=300)
+    plt.savefig(f"Results/heatmap_qoi_serrors_{prob}.png", dpi=300)
+    print("f")
     plt.close()
 
 print("Heatmaps generated.")

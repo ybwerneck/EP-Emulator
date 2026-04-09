@@ -78,6 +78,8 @@ if __name__ == "__main__":
         dist,
         batch_size=batch_size,
         pop_size=150,
+        P_min=0 if args.model == "A" else 0.75,
+        P_max=1 if args.model == "A" else 1.25,
         checkpoint_interval=1,
         num_iters=1000,
         results_dir=results_dir,

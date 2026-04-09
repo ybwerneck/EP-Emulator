@@ -11,10 +11,10 @@ probs = ["A", "B"]
 
 # Custom problem names
 problem_names = {
-    "A": "Problem E_A",
-    "B": "Problem E_B",
-    "C": "Problem M_A",
-    "D": "Problem M_B"
+    "A": "Problem A_E",
+    "B": "Problem B_E",
+    "C": "Problem A_M",
+    "D": "Problem B_M"
 }
 
 # QoI columns in CSV
@@ -97,18 +97,26 @@ for prob in probs:
     # -------------------------------
     plt.figure(figsize=(14, 12))
 
-    sns.heatmap(
+    ax = sns.heatmap(
         heatmap_df,
-        cmap="RdBu_r",  # blue → red
+        cmap="RdBu_r",
         norm=colors.LogNorm(vmin=1e-5, vmax=1),
         linewidths=0.7,
         linecolor="black",
         annot=True,
         fmt=".1e",
         annot_kws={"size":14},
-        cbar_kws={"label": "MARE"}
+        cbar_kws={
+            "label": "MARE",
+            "shrink": 1.0,   # increase height (try 1.2–1.4 if needed)
+            "aspect": 15     # thickness of colorbar (smaller = thicker)
+        }
     )
 
+    # Colorbar formatting
+    cbar = ax.collections[0].colorbar
+    cbar.ax.tick_params(labelsize=18)   # tick font size
+    cbar.set_label("MARE", fontsize=22) # label font
     plt.title(f"{problem_names[prob]} – QoI Error Heatmap", fontsize=28)
 
     plt.xlabel("QoI", fontsize=24)
@@ -119,7 +127,8 @@ for prob in probs:
 
     plt.tight_layout()
 
-    plt.savefig(f"Results/heatmap_qoi_errors_{prob}.png", dpi=300)
+    plt.savefig(f"Results/heatmap_qoi_{prob}.png", dpi=300)
+    print("f")
     plt.close()
 
 print("Heatmaps generated.")

@@ -2,16 +2,15 @@
 """
 Post-process inverse problem runs and simulate early stopping.
 
-For each emulator/run it computes:
-- Minimum iteration per sample where Y error < threshold
-- Aggregated metrics across samples
+Stopping rule:
+- Stagnation detection (patience + tolerance)
 
-If param_error_full.npy exists, it also computes:
-- Parameter error at the iteration where Y crosses the threshold
+Metrics reported at the stopping iteration:
+- Parameter error
+- Y error
 
 Outputs:
 - early_stop_metrics.csv
-- param_error_at_threshold.csv
 - inverse_summary_table.csv
 - success_curves.png
 - convergence_histograms.png
@@ -72,28 +71,42 @@ def aggregate_runs(root_folder):
 # Early stopping logic
 # ============================================================
 
-def compute_stop_iterations(y_err, threshold):
+def compute_stop_iterations(y_err, patience=10, tol=1e-5):
 
-    err = y_err.mean(axis=3)      # (it,batch,pop)
+    err = y_err.mean(axis=3)      # (it, batch, pop)
+    best = np.min(err, axis=2)    # (it, batch)
 
-    best = np.min(err, axis=2)    # (it,batch)
+    iters, batch = best.shape
 
-    crossed = best < threshold
+    stop_iter = np.zeros(batch, dtype=int)
 
-    first_cross = np.argmax(crossed, axis=0)
+    for b in range(batch):
 
-    never_cross = ~crossed.any(axis=0)
+        best_so_far = best[0, b]
+        stagnation = 0
 
-    first_cross[never_cross] = best.shape[0]
+        for i in range(1, iters):
 
-    return first_cross, best
+            if best[i, b] < best_so_far - tol:
+                best_so_far = best[i, b]
+                stagnation = 0
+            else:
+                stagnation += 1
+
+            if stagnation >= patience:
+                stop_iter[b] = i
+                break
+        else:
+            stop_iter[b] = iters
+
+    return stop_iter, best
 
 
 # ============================================================
-# Parameter error at threshold
+# Parameter error at stopping iteration
 # ============================================================
 
-def get_param_error_at_threshold(run, threshold):
+def get_param_error_at_stop(run, stop_iter):
 
     y_err = run["y_error"]
     p_err = run["param_error"]
@@ -102,24 +115,19 @@ def get_param_error_at_threshold(run, threshold):
         return None
 
     err = y_err.mean(axis=3)
-
     best_idx = np.argmin(err, axis=2)
-    best_err = np.min(err, axis=2)
 
-    crossed = best_err < threshold
-    first_cross = np.argmax(crossed, axis=0)
-
-    never = ~crossed.any(axis=0)
-    first_cross[never] = best_err.shape[0] - 1
-
-    batch = best_err.shape[1]
+    batch = best_idx.shape[1]
     n_params = p_err.shape[3]
 
     param_errors = np.zeros((batch, n_params))
 
     for b in range(batch):
 
-        it = first_cross[b]
+        it = stop_iter[b] - 1
+        if it < 0:
+            it = 0
+
         p = best_idx[it, b]
 
         param_errors[b] = p_err[it, b, p]
@@ -128,22 +136,15 @@ def get_param_error_at_threshold(run, threshold):
 
 
 # ============================================================
-# Y error at threshold
+# Y error at stopping iteration
 # ============================================================
 
-def get_y_error_at_threshold(run, threshold):
+def get_y_error_at_stop(run, stop_iter):
 
     y_err = run["y_error"]
 
     err = y_err.mean(axis=3)
-
     best_err = np.min(err, axis=2)
-
-    crossed = best_err < threshold
-    first_cross = np.argmax(crossed, axis=0)
-
-    never = ~crossed.any(axis=0)
-    first_cross[never] = best_err.shape[0] - 1
 
     batch = best_err.shape[1]
 
@@ -151,7 +152,10 @@ def get_y_error_at_threshold(run, threshold):
 
     for b in range(batch):
 
-        it = first_cross[b]
+        it = stop_iter[b] - 1
+        if it < 0:
+            it = 0
+
         y_errors[b] = best_err[it, b]
 
     return y_errors
@@ -161,18 +165,17 @@ def get_y_error_at_threshold(run, threshold):
 # Metrics
 # ============================================================
 
-def compute_metrics(runs, threshold):
+def compute_metrics(runs):
 
     rows = []
     stop_iters = {}
-    curves = {}
 
     for run in runs:
 
         name = os.path.basename(run["folder"])
         y_err = run["y_error"]
 
-        stop_iter, best = compute_stop_iterations(y_err, threshold)
+        stop_iter, best = compute_stop_iterations(y_err)
 
         rows.append({
             "emulator": name,
@@ -181,37 +184,18 @@ def compute_metrics(runs, threshold):
             "std_iter": np.std(stop_iter),
             "min_iter": np.min(stop_iter),
             "max_iter": np.max(stop_iter),
-            "success_rate": np.mean(stop_iter < y_err.shape[0])
         })
 
         stop_iters[name] = stop_iter
-        curves[name] = (best < threshold).mean(axis=1)
 
     df = pd.DataFrame(rows)
 
-    return df, stop_iters, curves
+    return df, stop_iters
 
 
 # ============================================================
 # Plots
 # ============================================================
-
-def plot_success_curves(curves, save_path):
-
-    plt.figure(figsize=(8,6))
-
-    for name, curve in curves.items():
-        plt.plot(curve, label=name)
-
-    plt.xlabel("Iteration")
-    plt.ylabel("Solved Samples Fraction")
-    plt.title("Success Probability vs Iteration")
-    plt.legend()
-    plt.tight_layout()
-
-    plt.savefig(save_path, dpi=300)
-    plt.close()
-
 
 def plot_histograms(stop_iters, save_path):
 
@@ -226,7 +210,7 @@ def plot_histograms(stop_iters, save_path):
             label=name
         )
 
-    plt.xlabel("Iterations to reach threshold")
+    plt.xlabel("Iterations to convergence")
     plt.ylabel("Number of samples")
     plt.title("Distribution of Convergence Iterations")
     plt.legend()
@@ -246,7 +230,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Early stopping analysis")
     parser.add_argument("--root_folder", required=True)
-    parser.add_argument("--threshold", type=float, default=0.0005)
 
     args = parser.parse_args()
 
@@ -255,7 +238,7 @@ if __name__ == "__main__":
 
     print(f"{len(runs)} runs loaded")
 
-    df, stop_iters, curves = compute_metrics(runs, args.threshold)
+    df, stop_iters = compute_metrics(runs)
 
     print("\nEarly stopping metrics:\n")
     print(df)
@@ -265,50 +248,10 @@ if __name__ == "__main__":
         index=False
     )
 
-    plot_success_curves(
-        curves,
-        os.path.join(args.root_folder, "success_curves.png")
-    )
-
     plot_histograms(
         stop_iters,
         os.path.join(args.root_folder, "convergence_histograms.png")
     )
-
-
-    # ============================================================
-    # Parameter error at threshold
-    # ============================================================
-
-    rows = []
-
-    for run in runs:
-
-        name = os.path.basename(run["folder"])
-
-        param_err = get_param_error_at_threshold(run, args.threshold)
-
-        if param_err is None:
-            continue
-
-        rows.append({
-            "emulator": name,
-            "mean_param_error": param_err.mean(),
-            "median_param_error": np.median(param_err),
-            "max_param_error": param_err.max()
-        })
-
-    if len(rows) > 0:
-
-        df_param = pd.DataFrame(rows)
-
-        df_param.to_csv(
-            os.path.join(args.root_folder, "param_error_at_threshold.csv"),
-            index=False
-        )
-
-        print("\nParameter error at threshold:\n")
-        print(df_param)
 
 
     # ============================================================
@@ -323,12 +266,12 @@ if __name__ == "__main__":
 
         y_err = run["y_error"]
 
-        stop_iter, _ = compute_stop_iterations(y_err, args.threshold)
+        stop_iter, _ = compute_stop_iterations(y_err)
 
         total_iters = y_err.shape[0]
 
-        # parameter error at threshold
-        param_err = get_param_error_at_threshold(run, args.threshold)
+        # parameter error
+        param_err = get_param_error_at_stop(run, stop_iter)
 
         if param_err is not None:
             param_mean = param_err.mean()
@@ -336,6 +279,12 @@ if __name__ == "__main__":
         else:
             param_mean = np.nan
             param_std = np.nan
+
+        # Y error
+        y_err_stop = get_y_error_at_stop(run, stop_iter)
+
+        y_mean = y_err_stop.mean()
+        y_std = y_err_stop.std()
 
         summary = run["summary"]
 
@@ -345,6 +294,7 @@ if __name__ == "__main__":
             time_per_iter = np.nan
 
         summary_rows.append({
+
             "emulator": name,
 
             "iter_mean": np.mean(stop_iter),
@@ -352,10 +302,11 @@ if __name__ == "__main__":
             "iter_min": np.min(stop_iter),
             "iter_max": np.max(stop_iter),
 
-            "success_rate": np.mean(stop_iter < total_iters),
-
             "param_error_mean": param_mean,
             "param_error_std": param_std,
+
+            "y_error_mean": y_mean,
+            "y_error_std": y_std,
 
             "time_per_iteration": time_per_iter
         })

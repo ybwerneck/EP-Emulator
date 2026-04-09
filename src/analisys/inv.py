@@ -94,9 +94,9 @@ def plot_avg_param_y_error(runs, save_path):
             avg_best_per_sample = min_over_pop.mean(axis=1)  # (it,)
 
             # Step 4: compute Q1/Q2/Q3 per iteration across batch
-            q1 = np.quantile(min_over_pop, 0.25, axis=1)  # (it,)
+            q1 = np.quantile(min_over_pop, 0.01, axis=1)  # (it,)
             q2 = np.quantile(min_over_pop, 0.50, axis=1)
-            q3 = np.quantile(min_over_pop, 0.75, axis=1)
+            q3 = np.quantile(min_over_pop, 0.99, axis=1)
 
             axes[0].plot(avg_best_per_sample, color=colors[i], label=os.path.basename(run["folder"]))
             axes[0].fill_between(np.arange(len(avg_best_per_sample)), q1, q3, alpha=0.2, color=colors[i])
@@ -160,9 +160,9 @@ def plot_three_params(runs, save_path, param_indices=None):
             # Take single parameter
             param_err = p_err[:, :, :, p_idx]  # (it, batch, pop)
             min_over_pop = np.mean(param_err, axis=2)  # best per sample (it, batch)
-            q1 = np.quantile(min_over_pop, 0.25, axis=1)
+            q1 = np.quantile(min_over_pop, 0.01, axis=1)
             q2 = np.quantile(min_over_pop, 0.50, axis=1)
-            q3 = np.quantile(min_over_pop, 0.75, axis=1)
+            q3 = np.quantile(min_over_pop, 0.99, axis=1)
             median_avg = min_over_pop.mean(axis=1)
             axes[j].plot(median_avg, color=colors[i], label=os.path.basename(run["folder"]))
             axes[j].fill_between(np.arange(len(median_avg)), q1, q3, alpha=0.2, color=colors[i])

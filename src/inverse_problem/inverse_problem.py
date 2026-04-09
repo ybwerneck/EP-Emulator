@@ -250,6 +250,7 @@ def inverse_problem_DE(emulator, X, Y, dist,
 
                         P_best[i, j] = P_refined
                         best_loss[i, j] = loss_ref
+                        print("Replacment" ,loss_before,loss_ref)
 
         # ----------------------------------------------------
         # Logging
