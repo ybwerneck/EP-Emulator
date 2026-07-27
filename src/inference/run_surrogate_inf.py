@@ -17,7 +17,7 @@ from src.surrogate_models.gaussian_process import *
 # Core evaluation
 # ============================================================
 
-def evaluate_model(model, x_val, y_val, num_runs=10, n_infer_samples=int(1e4), ignore_qois=None):
+def evaluate_model(model, x_val, y_val, num_runs=10, n_infer_samples=int(1e5), ignore_qois=None):
 
     if ignore_qois is None:
         ignore_qois = []

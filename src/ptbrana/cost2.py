@@ -28,7 +28,6 @@ prob_labels = {
     "D": r"$B_M$"
 }
 
-factor = 1e5 / 500
 
 # -----------------------------
 # Tempos de inferência do modelo verdadeiro (s) por problema
